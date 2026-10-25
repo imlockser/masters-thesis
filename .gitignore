@@ -1,0 +1,25 @@
+# Python environment and caches
+__pycache__/
+*.py[cod]
+.venv/
+.ruff_cache/
+.pytest_cache/
+
+# Jupyter checkpoints and generated language-server documents
+.ipynb_checkpoints/
+.virtual_documents/
+
+# Downloaded datasets, processed data, and prediction artifacts
+/data/
+
+# Frontend dependencies and build output
+node_modules/
+/frontend/dist/
+*.tsbuildinfo
+
+# Local environment files
+*env
+!env/
+
+# macOS
+.DS_Store

@@ -1,0 +1,38 @@
+[project]
+name = "masters-thesis"
+version = "0.1.0"
+description = "Agent-based conversational system for forecasting electricity generation in Germany."
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "dbos>=3.3.0",
+    "fastmcp>=4.1.1",
+    "holidays>=0.106",
+    "httpx>=0.28.1",
+    "lightgbm>=4.7.0",
+    "lxml>=6.1.3",
+    "mlflow==3.17.1",
+    "numpy>=2.5.4",
+    "open-mastr>=1.0.0",
+    "openai>=3.35.1",
+    "pandas>=3.0.6",
+    "pvlib>=0.16.1",
+    "pyarrow>=24,<26",
+    "pydantic>=2.14.1",
+    "pydantic-settings>=2.16.0",
+    "requests>=2.34.2",
+    "shap>=0.54.1",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=9.1.1",
+    "ruff>=0.17.1",
+]
+experiments = [
+    "ipykernel>=7.4.0",
+    "ipywidgets>=8.1.9",
+    "jupyterlab>=4.6.4",
+    "matplotlib>=3.11.2",
+    "seaborn>=0.13.2",
+]

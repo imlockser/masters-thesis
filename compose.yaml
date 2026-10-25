@@ -1,0 +1,154 @@
+services:
+  postgres:
+    image: postgres:18-alpine
+    restart: unless-stopped
+    ports:
+      - "5432:5432"
+    env_file:
+      - ./env/postgres.env
+    volumes:
+      - postgres_data:/var/lib/postgresql
+      - ./postgres/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test:
+        - CMD-SHELL
+        - |-
+            for db in $${REQUIRED_DBS}; do
+              psql -h 127.0.0.1 \
+                -U "$${POSTGRES_USER}" \
+                -d "$${db}" \
+                -v ON_ERROR_STOP=1 \
+                -c "SELECT 1" \
+                >/dev/null || exit 1
+            done
+      interval: 5s
+      timeout: 5s
+      retries: 10
+      start_period: 1h
+
+  litellm:
+    image: ghcr.io/berriai/litellm:v1.106.0
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    env_file:
+      - ./env/litellm.env
+
+  seaweedfs:
+    image: chrislusf/seaweedfs:4.48
+    restart: unless-stopped
+    ports:
+      - "8333:8333"
+      - "23646:23646"
+    env_file:
+      - ./env/seaweedfs.env
+    volumes:
+      - seaweed_data:/data
+
+  zitadel:
+    image: ghcr.io/zitadel/zitadel:v4.19.5
+    restart: unless-stopped
+    user: "0"
+    command: start-from-init --masterkeyFromEnv
+    env_file:
+      - ./env/zitadel.env
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - zitadel_bootstrap:/zitadel/bootstrap
+    healthcheck:
+      test: ["CMD", "/app/zitadel", "ready"]
+      interval: 10s
+      timeout: 30s
+      retries: 12
+      start_period: 20s
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.zitadel.rule=Host(`localhost`)
+      - traefik.http.routers.zitadel.entrypoints=web
+      - traefik.http.routers.zitadel.priority=1
+      - traefik.http.routers.zitadel.service=zitadel
+      - traefik.http.services.zitadel.loadbalancer.server.port=8080
+      - traefik.http.services.zitadel.loadbalancer.server.scheme=h2c
+      - traefik.http.routers.zitadel-api.rule=Host(`localhost`) && PathPrefix(`/api`)
+      - traefik.http.routers.zitadel-api.entrypoints=web
+      - traefik.http.routers.zitadel-api.priority=200
+      - traefik.http.routers.zitadel-api.middlewares=zitadel-strip-api
+      - traefik.http.routers.zitadel-api.service=zitadel
+      - traefik.http.middlewares.zitadel-strip-api.stripprefix.prefixes=/api
+
+  zitadel-login:
+    image: ghcr.io/zitadel/zitadel-login:v4.19.5
+    restart: unless-stopped
+    user: "0"
+    env_file:
+      - ./env/zitadel.env
+    depends_on:
+      zitadel:
+        condition: service_healthy
+    volumes:
+      - zitadel_bootstrap:/zitadel/bootstrap:ro
+    labels:
+      - traefik.enable=true
+      - traefik.http.routers.zitadel-login.rule=Host(`localhost`) && PathPrefix(`/ui/v2/login`)
+      - traefik.http.routers.zitadel-login.entrypoints=web
+      - traefik.http.routers.zitadel-login.priority=250
+      - traefik.http.routers.zitadel-login.service=zitadel-login
+      - traefik.http.services.zitadel-login.loadbalancer.server.port=3000
+      - traefik.http.routers.zitadel-root.rule=Host(`localhost`) && Path(`/`)
+      - traefik.http.routers.zitadel-root.entrypoints=web
+      - traefik.http.routers.zitadel-root.priority=400
+      - traefik.http.routers.zitadel-root.middlewares=zitadel-root-rewrite
+      - traefik.http.routers.zitadel-root.service=zitadel-login
+      - traefik.http.middlewares.zitadel-root-rewrite.replacepath.path=/ui/v2/login/
+
+  zitadel-proxy:
+    image: traefik:v3.6
+    restart: unless-stopped
+    command:
+      - --providers.docker=true
+      - --providers.docker.exposedbydefault=false
+      - --entrypoints.web.address=:80
+    ports:
+      - "127.0.0.1:8080:80"
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      zitadel:
+        condition: service_healthy
+      zitadel-login:
+        condition: service_started
+
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v3.17.1
+    restart: unless-stopped
+    ports:
+      - "5001:5000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      seaweedfs:
+        condition: service_started
+    env_file:
+      - ./env/mlflow.env
+    command:
+      - /bin/bash
+      - -c
+      - |
+        pip install --no-cache-dir "psycopg[binary]" boto3 &&
+        mlflow server \
+          --host 0.0.0.0 \
+          --port 5000 \
+          --backend-store-uri "$${MLFLOW_BACKEND_STORE_URI}" \
+          --artifacts-destination "$${MLFLOW_ARTIFACTS_DESTINATION}" \
+          --serve-artifacts \
+          --allowed-hosts "*"
+
+volumes:
+  postgres_data:
+  seaweed_data:
+  zitadel_bootstrap:
