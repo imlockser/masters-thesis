@@ -19,6 +19,7 @@ node_modules/
 
 # Local environment files
 *env
+*.env.*
 !env/
 
 # macOS

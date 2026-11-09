@@ -1,4 +1,4 @@
-import { MenuOutlined, PlusOutlined } from '@ant-design/icons'
+import { EditOutlined, MenuOutlined, MoonOutlined, SunOutlined } from '@ant-design/icons'
 import {
   Alert,
   App,
@@ -15,19 +15,25 @@ import {
   Spin,
   Typography,
 } from 'antd'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import type { Chat } from '../api/types'
 import { ChatSidebar } from './ChatSidebar'
 import { MessageInput } from './MessageInput'
 import { MessageList } from './MessageList'
 import { useChat } from './useChat'
 
-export function ChatPage() {
+export function ChatPage({ dark, onToggleTheme }: {
+  dark: boolean
+  onToggleTheme: () => void
+}) {
   const state = useChat()
   const { message, modal } = App.useApp()
   const screens = Grid.useBreakpoint()
   const [drawer, setDrawer] = useState(false)
   const [mutating, setMutating] = useState(false)
+  const [confirmingDeleteAll, setConfirmingDeleteAll] = useState(false)
+  const [deletingAll, setDeletingAll] = useState(false)
+  const deletePending = useRef(false)
   const [renaming, setRenaming] = useState<Chat | null>(null)
   const [title, setTitle] = useState('')
   const [input, setInput] = useState({ chatId: state.selectedId, value: '' })
@@ -48,26 +54,48 @@ export function ChatPage() {
     }
   }
 
-  function confirmDelete(chat?: Chat) {
+  function openRename(chat: Chat) {
+    setRenaming(chat)
+    setTitle(chat.title)
+  }
+
+  function confirmDelete(chat: Chat) {
     modal.confirm({
-      title: chat ? `Delete “${chat.title}”?` : 'Delete all conversations?',
-      content: 'The conversation history will be permanently deleted.',
+      title: `Delete “${chat.title}”?`,
+      content: 'The chat history will be permanently deleted.',
       okText: 'Delete',
       okButtonProps: { danger: true },
       onOk: async () => {
         try {
-          if (chat) await state.deleteChat(chat.id)
-          else await state.deleteAllChats()
+          await state.deleteChat(chat.id)
         } catch (cause) {
           void message.error(
             cause instanceof Error
               ? cause.message
-              : 'The conversation could not be deleted.',
+              : 'The chat could not be deleted.',
           )
           throw cause
         }
       },
     })
+  }
+
+  async function deleteAllChats() {
+    if (deletePending.current) return
+    deletePending.current = true
+    setDeletingAll(true)
+
+    try {
+      await state.deleteAllChats()
+      setConfirmingDeleteAll(false)
+    } catch (cause) {
+      void message.error(
+        cause instanceof Error ? cause.message : 'Chats could not be deleted.',
+      )
+    } finally {
+      deletePending.current = false
+      setDeletingAll(false)
+    }
   }
 
   const active =
@@ -79,20 +107,22 @@ export function ChatPage() {
       activeChatId={active ? state.selectedId : null}
       loading={state.loadingList}
       mutating={mutating}
+      deletingAll={deletingAll}
       onSelect={(id) => {
         state.selectChat(id)
         setDrawer(false)
       }}
       onCreate={() => {
-        void mutate(state.createChat)
+        state.newChat()
+        setInput({ chatId: null, value: '' })
         setDrawer(false)
       }}
-      onRename={(chat) => {
-        setRenaming(chat)
-        setTitle(chat.title)
-      }}
+      onRename={openRename}
       onDelete={(chat) => confirmDelete(chat)}
-      onDeleteAll={() => confirmDelete()}
+      onDeleteAll={() => {
+        setDrawer(false)
+        setConfirmingDeleteAll(true)
+      }}
     />
   )
   const status = !active
@@ -113,7 +143,8 @@ export function ChatPage() {
         </Layout.Sider>
       ) : (
         <Drawer
-          title="Conversations"
+          aria-label="Chats"
+          closable={false}
           placement="left"
           open={drawer}
           onClose={() => setDrawer(false)}
@@ -127,24 +158,43 @@ export function ChatPage() {
       <Layout className="conversation-layout">
         <header className="conversation-header">
           <Flex align="center" justify="space-between" gap="middle">
-            <Space size="middle" style={{ minWidth: 0 }}>
+            <Space size="middle" style={{ minWidth: 0, flex: 1 }}>
               {!screens.lg && (
                 <Button
                   icon={<MenuOutlined />}
-                  aria-label="Open conversations"
+                  aria-label="Open chats"
                   onClick={() => setDrawer(true)}
                 />
               )}
               <div className="conversation-heading">
+                {state.chat && (
+                  <Button
+                    type="text"
+                    icon={<EditOutlined style={{ fontSize: 18 }} />}
+                    aria-label="Rename chat"
+                    title="Rename chat"
+                    disabled={mutating}
+                    style={{ flexShrink: 0 }}
+                    onClick={() => {
+                      if (state.chat) openRename(state.chat)
+                    }}
+                  />
+                )}
                 <Typography.Title level={4} ellipsis>
                   {state.chat?.title ?? 'Energy Assistant'}
                 </Typography.Title>
-                <Typography.Text type="secondary">
-                  Solar generation in Germany
-                </Typography.Text>
               </div>
             </Space>
-            {status && <Badge status="processing" text={status} />}
+            <Space style={{ flexShrink: 0 }}>
+              {status && <Badge status="processing" text={status} />}
+              <Button
+                type="text"
+                icon={dark ? <SunOutlined style={{ fontSize: 18 }} /> : <MoonOutlined style={{ fontSize: 18 }} />}
+                aria-label={dark ? 'Switch to light theme' : 'Switch to dark theme'}
+                title={dark ? 'Switch to light theme' : 'Switch to dark theme'}
+                onClick={onToggleTheme}
+              />
+            </Space>
           </Flex>
         </header>
 
@@ -175,7 +225,7 @@ export function ChatPage() {
         <main className="conversation-main">
           {state.loadingChat || state.loadingList ? (
             <div className="centered">
-              <Spin description="Loading conversation…" />
+              <Spin delay={300} description="Loading chat…" style={{ color: 'var(--ant-color-text-secondary)' }} />
             </div>
           ) : state.chat ? (
             <MessageList chat={state.chat} run={state.run} />
@@ -189,46 +239,51 @@ export function ChatPage() {
                       Explore Germany’s solar generation
                     </Typography.Title>
                     <Typography.Text type="secondary">
-                      Start a conversation to get forecasts and explanations.
+                      Start a chat to get forecasts and explanations.
                     </Typography.Text>
                   </Space>
                 }
-              >
-                <Button
-                  aria-label="New chat"
-                  type="primary"
-                  icon={<PlusOutlined />}
-                  onClick={() => {
-                    void mutate(state.createChat)
-                  }}
-                  loading={mutating}
-                  disabled={state.loadingList}
-                >
-                  New chat
-                </Button>
-              </Empty>
+              />
             </div>
           )}
         </main>
 
-        {state.selectedId && (
-          <MessageInput
-            value={draft}
-            onChange={setDraft}
-            disabled={state.busy || !state.chat}
-            sending={state.sending}
-            onSend={() => {
-              if (draft.trim() && !state.busy)
-                void state.send(draft).then((sent) => {
-                  if (sent) setDraft('')
-                })
-            }}
-          />
-        )}
+        <MessageInput
+          key={state.selectedId ?? 'draft'}
+          value={draft}
+          onChange={setDraft}
+          disabled={state.busy || state.loadingList || (!!state.selectedId && !state.chat)}
+          sending={state.sending}
+          onSend={() => {
+            if (draft.trim() && !state.busy)
+              void state.send(draft).then((sent) => {
+                if (sent) setDraft('')
+              })
+          }}
+        />
       </Layout>
 
       <Modal
-        title="Rename conversation"
+        title="Delete all chats?"
+        open={confirmingDeleteAll}
+        okText="Delete all chats"
+        okButtonProps={{ danger: true, disabled: deletingAll }}
+        cancelButtonProps={{ disabled: deletingAll }}
+        confirmLoading={deletingAll}
+        closable={!deletingAll}
+        keyboard={!deletingAll}
+        mask={{ closable: !deletingAll }}
+        onCancel={() => {
+          if (!deletingAll) setConfirmingDeleteAll(false)
+        }}
+        onOk={deleteAllChats}
+      >
+        All your chats and messages will be permanently deleted.
+        This cannot be undone.
+      </Modal>
+
+      <Modal
+        title="Rename chat"
         open={!!renaming}
         onCancel={() => setRenaming(null)}
         okText="Save"
@@ -242,7 +297,7 @@ export function ChatPage() {
         }}
       >
         <Input
-          aria-label="Conversation title"
+          aria-label="Chat title"
           value={title}
           onChange={(event) => setTitle(event.target.value)}
           maxLength={120}

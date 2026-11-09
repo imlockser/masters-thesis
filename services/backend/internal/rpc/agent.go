@@ -8,6 +8,7 @@ import (
 	"github.com/creachadair/jrpc2/handler"
 
 	"masters-thesis/backend/internal/agent"
+	"masters-thesis/backend/internal/auth"
 	"masters-thesis/backend/internal/storage"
 )
 
@@ -20,7 +21,6 @@ const (
 type SendMessageParams struct {
 	RequestID string `json:"request_id"`
 	ChatID    string `json:"chat_id"`
-	UserID    string `json:"user_id"`
 	Content   string `json:"content"`
 }
 
@@ -31,12 +31,12 @@ func AgentMethods(service *agent.Service) handler.Map {
 			if err := request.UnmarshalParams(jrpc2.StrictFields(&params)); err != nil {
 				return agent.StartedRun{}, jrpc2.Errorf(jrpc2.InvalidParams, "Invalid SendMessage parameters")
 			}
-			result, err := service.SendMessage(ctx, params.RequestID, params.ChatID, params.UserID, params.Content)
+			result, err := service.SendMessage(ctx, params.RequestID, params.ChatID, auth.UserID(ctx), params.Content)
 			switch {
 			case err == nil:
 				return result, nil
 			case errors.Is(err, storage.ErrInvalidInput):
-				return agent.StartedRun{}, jrpc2.Errorf(jrpc2.InvalidParams, "request_id and chat_id must be UUIDs; user_id and content are required")
+				return agent.StartedRun{}, jrpc2.Errorf(jrpc2.InvalidParams, "request_id and chat_id must be UUIDs; content is required")
 			case errors.Is(err, storage.ErrChatNotFound):
 				return agent.StartedRun{}, jrpc2.Errorf(ChatNotFound, "Chat not found")
 			case errors.Is(err, storage.ErrChatBusy):

@@ -7,11 +7,16 @@ snapshot and accesses the backend only through `SaveUserMemory`.
 | Entry point | Purpose |
 | --- | --- |
 | `POST /rpc`, method `SendMessage` | Save a user request, enqueue the agent, and return its run ID. |
-| `GET /agent/runs/{run_id}/events?user_id=...` | Immediately open an SSE connection and replay/follow agent events. |
+| `GET /agent/runs/{run_id}/events` | Immediately open an SSE connection and replay/follow agent events. |
 
-Both are local development interfaces on `127.0.0.1:8081`. The caller supplies
-`user_id` as RPC parameters or an SSE query parameter. Ownership is checked against
-the chat; this is not authentication. ZITADEL is not connected. Frontend chat
+Both interfaces on `127.0.0.1:8081` require a Bearer access token, validated through
+[ZITADEL introspection](authentication.md). Ownership uses only the verified `sub`.
+Both require a verified `viewer`, `developer`, or `admin` role from AI Platform;
+roles never bypass ownership checks.
+RPC accepts business parameters only; `user_id` is an unknown field and rejected.
+SSE ownership is checked from context, including on stream reconnect.
+The frontend signs in through ZITADEL and sends tokens with RPC and fetch-based
+SSE calls. Frontend chat
 creation, listing, conversation reads, renaming, and deletion use the
 [chat procedures](backend.md#chat-procedures).
 
@@ -25,14 +30,14 @@ creation, listing, conversation reads, renaming, and deletion use the
   "params": {
     "request_id": "00000000-0000-0000-0000-000000000002",
     "chat_id": "00000000-0000-0000-0000-000000000001",
-    "user_id": "example-user",
     "content": "Forecast Germany's solar generation for tomorrow."
   }
 }
 ```
 
-All four parameters are required. IDs must be UUIDs; user and content must be
-non-empty. Unknown fields are rejected. History length is fixed at five completed
+`request_id`, `chat_id`, and `content` are required. IDs must be UUIDs and content
+must be non-empty. Unknown fields, including `user_id`, are rejected.
+History length is fixed at five completed
 agent answers, including each turn's user request, assistant tool calls, and tool
 results. Fewer turns are returned when less history exists; incomplete turns are
 excluded. The caller cannot choose a different window.
@@ -55,7 +60,7 @@ The JSON-RPC result is returned after enqueue, without waiting for generation:
 ```json
 {
   "run_id": "00000000-0000-0000-0000-000000000002",
-  "events_url": "/agent/runs/00000000-0000-0000-0000-000000000002/events?user_id=example-user"
+  "events_url": "/agent/runs/00000000-0000-0000-0000-000000000002/events"
 }
 ```
 
@@ -81,7 +86,8 @@ them, including failed workflows; the agent retains its no-recovery policy.
 ## SSE lifecycle
 
 Open the returned `events_url` immediately; no status polling is required.
-The server checks ownership, returns `text/event-stream`, and flushes a connection
+The server authenticates the opening request, checks ownership, returns
+`text/event-stream`, and flushes a connection
 comment before waiting for events. Keepalive comments are sent every 15 seconds.
 The normal HTTP write timeout is disabled for the SSE connection.
 
@@ -107,10 +113,13 @@ notifications and workflow termination. No application status-polling loop is us
 
 A client disconnect stops its reader without canceling the workflow or result
 persistence. `run_completed` is forwarded after the backend has stored the result.
-The client closes EventSource after `run_completed` or `run_failed`. A backend
+The frontend aborts its fetch reader after `run_completed` or `run_failed`. A backend
 shutdown closes its readers without canceling Python workflows.
 
-Before opening SSE, invalid parameters return HTTP 400, missing/foreign runs
+Both routes return HTTP 401 for invalid/missing tokens, 403 for authenticated
+users without an allowed project role, and 503 for introspection failures.
+Tokens are checked at connection opening and each reconnect, not per
+event. Before opening SSE, invalid parameters return HTTP 400, missing/foreign runs
 return 404, and stream initialization failures return 503. An infrastructure
 failure after opening emits `stream_error` without an event ID; reconnect using
 the last processed ID. A terminated workflow without a terminal event produces

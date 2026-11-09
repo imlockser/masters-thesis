@@ -10,6 +10,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"masters-thesis/backend/internal/auth"
 	"masters-thesis/backend/internal/rpc"
 	"masters-thesis/backend/internal/storage"
 )
@@ -29,12 +30,11 @@ func TestFrontendChatProcedures(t *testing.T) {
 		t.Fatal(err)
 	}
 	bridge := rpc.NewHandler(store.SaveUserMemory, rpc.ChatMethods(store))
-	t.Cleanup(func() { bridge.Close() })
-	server := httptest.NewServer(bridge)
+	server := httptest.NewServer(fixtureAuthentication(t).Middleware(auth.RequireUserRole(bridge)))
 	t.Cleanup(server.Close)
-	invoke := func(method string, params map[string]any, target any) {
+	invoke := func(userID, method string, params map[string]any, target any) {
 		t.Helper()
-		result, code := callMethod(t, server.URL, method, params)
+		result, code := callMethod(t, server.URL, userID, method, params)
 		if code != 0 {
 			t.Fatalf("%s failed with code %d", method, code)
 		}
@@ -46,26 +46,26 @@ func TestFrontendChatProcedures(t *testing.T) {
 			t.Fatalf("Expected null deletion result, got %s", result)
 		}
 	}
-	user := map[string]any{"user_id": "user-1"}
+	user := map[string]any{}
 	var chats []storage.Chat
-	invoke("ListChats", user, &chats)
+	invoke("user-1", "ListChats", user, &chats)
 	if chats == nil || len(chats) != 0 {
 		t.Fatalf("Expected an empty JSON array: %+v", chats)
 	}
 	var chat, newer, other storage.Chat
-	invoke("CreateChat", map[string]any{"user_id": "user-1", "title": " Solar "}, &chat)
-	invoke("CreateChat", map[string]any{"user_id": "user-1", "title": "Newer"}, &newer)
-	invoke("CreateChat", map[string]any{"user_id": "user-2", "title": "Other"}, &other)
+	invoke("user-1", "CreateChat", map[string]any{"title": " Solar "}, &chat)
+	invoke("user-1", "CreateChat", map[string]any{"title": "Newer"}, &newer)
+	invoke("user-2", "CreateChat", map[string]any{"title": "Other"}, &other)
 	if chat.Title != "Solar" || uuid.Validate(chat.ID) != nil || chat.CreatedAt.IsZero() {
 		t.Fatalf("Invalid created chat: %+v", chat)
 	}
-	invoke("ListChats", user, &chats)
+	invoke("user-1", "ListChats", user, &chats)
 	if len(chats) != 2 || chats[0].ID != newer.ID || chats[1].ID != chat.ID {
 		t.Fatalf("Chat list order/ownership is incorrect: %+v", chats)
 	}
-	params := map[string]any{"chat_id": chat.ID, "user_id": chat.UserID}
+	params := map[string]any{"chat_id": chat.ID}
 	var details storage.ChatDetails
-	invoke("GetChat", params, &details)
+	invoke("user-1", "GetChat", params, &details)
 	if details.Messages == nil || len(details.Messages) != 0 || details.ActiveRunID != "" {
 		t.Fatalf("Invalid empty chat view: %+v", details)
 	}
@@ -80,30 +80,30 @@ func TestFrontendChatProcedures(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	invoke("GetChat", params, &details)
+	invoke("user-1", "GetChat", params, &details)
 	if len(details.Messages) != 13 || details.ActiveRunID != run.ID || details.Messages[12].CreatedAt.IsZero() {
 		t.Fatalf("GetChat truncated history or omitted the active run: %+v", details)
 	}
 	for _, method := range []string{"GetChat", "RenameChat", "DeleteChat"} {
-		foreign := map[string]any{"chat_id": chat.ID, "user_id": "user-2"}
+		foreign := map[string]any{"chat_id": chat.ID}
 		if method == "RenameChat" {
 			foreign["new_title"] = "Forbidden"
 		}
-		if _, code := callMethod(t, server.URL, method, foreign); code != int(rpc.ChatNotFound) {
+		if _, code := callMethod(t, server.URL, "user-2", method, foreign); code != int(rpc.ChatNotFound) {
 			t.Fatalf("%s did not reject foreign chat: %d", method, code)
 		}
 	}
-	if _, code := callMethod(t, server.URL, "DeleteChat", params); code != int(rpc.ChatBusy) {
+	if _, code := callMethod(t, server.URL, "user-1", "DeleteChat", params); code != int(rpc.ChatBusy) {
 		t.Fatalf("Active chat could be deleted: %d", code)
 	}
-	if _, code := callMethod(t, server.URL, "DeleteAllChats", user); code != int(rpc.ChatBusy) {
+	if _, code := callMethod(t, server.URL, "user-1", "DeleteAllChats", user); code != int(rpc.ChatBusy) {
 		t.Fatalf("Active chats could be bulk deleted: %d", code)
 	}
-	invoke("ListChats", user, &chats)
+	invoke("user-1", "ListChats", user, &chats)
 	if len(chats) != 2 {
 		t.Fatal("Rejected bulk deletion partially removed chats")
 	}
-	invoke("RenameChat", map[string]any{"chat_id": chat.ID, "user_id": chat.UserID, "new_title": " Renamed "}, &chat)
+	invoke("user-1", "RenameChat", map[string]any{"chat_id": chat.ID, "new_title": " Renamed "}, &chat)
 	if chat.Title != "Renamed" {
 		t.Fatalf("Incorrect renamed title: %s", chat.Title)
 	}
@@ -113,20 +113,20 @@ func TestFrontendChatProcedures(t *testing.T) {
 	if _, err := store.SaveUserMemory(ctx, chat.UserID, "Keep this memory.", 0); err != nil {
 		t.Fatal(err)
 	}
-	invoke("DeleteChat", params, nil)
-	if _, code := callMethod(t, server.URL, "GetChat", params); code != int(rpc.ChatNotFound) {
+	invoke("user-1", "DeleteChat", params, nil)
+	if _, code := callMethod(t, server.URL, "user-1", "GetChat", params); code != int(rpc.ChatNotFound) {
 		t.Fatalf("Deleted chat is still readable: %d", code)
 	}
 	if _, err := store.GetRun(ctx, run.ID, chat.UserID); !errors.Is(err, storage.ErrRunNotFound) {
 		t.Fatalf("Chat deletion did not cascade to runs: %v", err)
 	}
-	invoke("DeleteAllChats", user, nil)
-	invoke("DeleteAllChats", user, nil)
-	invoke("ListChats", user, &chats)
+	invoke("user-1", "DeleteAllChats", user, nil)
+	invoke("user-1", "DeleteAllChats", user, nil)
+	invoke("user-1", "ListChats", user, &chats)
 	if len(chats) != 0 {
 		t.Fatal("Bulk deletion did not remove all owned chats")
 	}
-	invoke("ListChats", map[string]any{"user_id": "user-2"}, &chats)
+	invoke("user-2", "ListChats", map[string]any{}, &chats)
 	if len(chats) != 1 || chats[0].ID != other.ID {
 		t.Fatal("Bulk deletion affected another user")
 	}

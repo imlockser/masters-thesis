@@ -19,6 +19,7 @@ host-based Python and Go processes connecting to Docker infrastructure.
 | `LLM_MODEL` | Model name configured in the gateway. |
 | `MCP_URL` | MCP HTTP endpoint, locally `http://127.0.0.1:8000/mcp`. |
 | `BACKEND_RPC_URL` | Backend endpoint, locally `http://127.0.0.1:8081/rpc`. |
+| `WORKER_CALLBACK_KEY` | Shared 64-hex-character service key, matching `env/backend.env`. |
 
 All settings are required; there are no URL defaults in the settings model.
 
@@ -34,6 +35,8 @@ Start the [Go backend](backend.md#json-rpc) after the worker initializes DBOS an
 registers queue `agent`. The backend URL is used only when `remember` is called.
 Ctrl+C or SIGTERM stops the worker, allowing ten seconds for active workflows
 before shutdown. The worker is currently a local process, outside Compose.
+Restart it after code or environment changes; the startup command does not enable
+automatic reload.
 
 ## Queue contract
 
@@ -41,12 +44,19 @@ Enqueue one JSON object as the workflow's sole argument:
 
 ```json
 {
+  "run_id": "00000000-0000-0000-0000-000000000002",
+  "memory_grant_nonce": "1111111111111111111111111111111111111111111111111111111111111111",
   "user_id": "example-user",
   "chat_id": "00000000-0000-0000-0000-000000000001",
   "messages": [{"role": "user", "content": "Forecast solar generation."}],
   "memory_version": 0
 }
 ```
+
+`run_id` equals the DBOS workflow ID. The public nonce enables the worker to
+derive its callback credential locally; neither the shared key nor the derived
+secret is a workflow argument, LLM message, event, or result. The backend provider
+uses the origin of `BACKEND_RPC_URL` with path `/internal/agent/memory`.
 
 The Go [agent API](agent-api.md) validates ownership, stores the current user
 message, and prepares the complete LLM history: instructions with UTC submission

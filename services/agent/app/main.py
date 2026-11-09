@@ -21,7 +21,7 @@ async def main() -> None:
         timeout=60,
     )
     mcp_provider.setup(settings.mcp_url, timeout=60)
-    backend_provider.setup(settings.backend_rpc_url)
+    backend_provider.setup(settings.backend_rpc_url, settings.worker_callback_key)
 
     DBOS(
         config={

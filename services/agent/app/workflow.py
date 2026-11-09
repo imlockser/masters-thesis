@@ -21,6 +21,8 @@ PORTABLE = WorkflowSerializationFormat.PORTABLE
 
 
 class AgentRequest(BaseModel):
+    run_id: UUID
+    memory_grant_nonce: str = Field(pattern=r"^[0-9a-f]{64}$")
     user_id: str = Field(min_length=1)
     chat_id: UUID
     messages: list[ChatCompletionMessageParam] = Field(min_length=1)
@@ -65,7 +67,11 @@ async def agent_request(request: dict[str, Any]) -> dict[str, Any]:
             async def save_summary(user_id: str, summary: str) -> None:
                 nonlocal version
                 version = await backend_provider.save_user_memory(
-                    user_id, summary, version
+                    user_id,
+                    summary,
+                    version,
+                    run_id=str(data.run_id),
+                    grant_nonce=data.memory_grant_nonce,
                 )
 
             capabilities = Capabilities(

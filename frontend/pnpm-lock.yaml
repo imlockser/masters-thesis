@@ -14,6 +14,9 @@ importers:
       antd:
         specifier: ^6.6.7
         version: 6.6.7(react-dom@19.3.1(react@19.3.1))(react@19.3.1)
+      oidc-client-ts:
+        specifier: ^3.5.0
+        version: 3.5.0
       react:
         specifier: ^19.3.1
         version: 19.3.1
@@ -23,6 +26,9 @@ importers:
       react-markdown:
         specifier: ^10.1.0
         version: 10.1.0(@types/react@19.3.0)(react@19.3.1)
+      react-oidc-context:
+        specifier: ^3.3.1
+        version: 3.3.1(oidc-client-ts@3.5.0)(react@19.3.1)
       remark-gfm:
         specifier: ^4.0.1
         version: 4.0.1
@@ -832,6 +838,10 @@ packages:
   json2mq@0.2.0:
     resolution: {integrity: sha512-SzoRg7ux5DWTII9J2qkrZrqV1gt+rTaoufMxEzXbS26Uid0NwaJd123HcoB80TgubEppxxIGdNxCx50fEoEWQA==}
 
+  jwt-decode@4.0.0:
+    resolution: {integrity: sha512-+KJGIyHgkGuIq3IEBNftfhW/LfWhXUIY6OmyVWjliu5KH1y0fw7VQ8YndE2O4qZdMSd9SqbnC8GOcZEy0Om7sA==}
+    engines: {node: '>=18'}
+
   lightningcss-android-arm64@1.33.0:
     resolution: {integrity: sha512-gEpRTalKdosp4Bb8qWtc2iOgE5SeIHlpS1up9bFq2wAyYhl1UdTObYiHe98zEM9SQvSoqQZ1IQD0JNpg3Ml5pg==}
     engines: {node: '>= 12.0.0'}
@@ -1059,6 +1069,10 @@ packages:
     resolution: {integrity: sha512-5vvB5+W7ePv+p3uqxi+RcW1XAzLW0/hxt3/4X4Lc4qHudzOhmBiBwOY6DRob4WnanAEGvNcLjF+KNOufrUoEQw==}
     engines: {node: '>=12.20.0'}
 
+  oidc-client-ts@3.5.0:
+    resolution: {integrity: sha512-l2q8l9CTCTOlbX+AnK4p3M+4CEpKpyQhle6blQkdFhm0IsBqsxm15bYaSa11G7pWdsYr6epdsRZxJpCyCRbT8A==}
+    engines: {node: '>=18'}
+
   oxlint@1.89.0:
     resolution: {integrity: sha512-a25hkfo61okGPvJz432fRIPoxlKtNnOVy9w4rzrmGgNm4iVTPwpSQlmdqNWnp6p9QyyPVfAZRgnf5XvSBZFk/A==}
     engines: {node: ^20.19.0 || >=22.12.0}
@@ -1102,6 +1116,13 @@ packages:
     peerDependencies:
       '@types/react': '>=18'
       react: '>=18'
+
+  react-oidc-context@3.3.1:
+    resolution: {integrity: sha512-/Azvm9W4DhhOtSDBE73kFInh1b6zZRRfILKbgmk2syExMF0PCYJOn/dGdOOi2BFX8x0rCeUe45NXHU+/+xDcrQ==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      oidc-client-ts: ^3.1.0
+      react: '>=16.14.0'
 
   react@19.3.1:
     resolution: {integrity: sha512-QNhWdt7nrgVWWQG58QuGsAR3jv3Hbe4mb4vz7w2csnHavciZJgda1CPNaldF6eVxv90ud3jUXpKlHL69gO38yw==}
@@ -2048,6 +2069,8 @@ snapshots:
     dependencies:
       string-convert: 0.2.1
 
+  jwt-decode@4.0.0: {}
+
   lightningcss-android-arm64@1.33.0:
     optional: true
 
@@ -2463,6 +2486,10 @@ snapshots:
 
   obug@3.0.0: {}
 
+  oidc-client-ts@3.5.0:
+    dependencies:
+      jwt-decode: 4.0.0
+
   oxlint@1.89.0:
     optionalDependencies:
       '@oxlint/binding-android-arm-eabi': 1.89.0
@@ -2531,6 +2558,11 @@ snapshots:
       vfile: 6.0.3
     transitivePeerDependencies:
       - supports-color
+
+  react-oidc-context@3.3.1(oidc-client-ts@3.5.0)(react@19.3.1):
+    dependencies:
+      oidc-client-ts: 3.5.0
+      react: 19.3.1
 
   react@19.3.1: {}
 

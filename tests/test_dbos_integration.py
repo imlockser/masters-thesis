@@ -88,6 +88,8 @@ def test_queue_delivers_live_events_and_runs_ten_requests_concurrently(monkeypat
                             }
                         ],
                         "memory_version": 0,
+                        "run_id": str(uuid4()),
+                        "memory_grant_nonce": "22" * 32,
                     },
                 )
                 for index in range(10)

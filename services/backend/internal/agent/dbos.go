@@ -15,10 +15,12 @@ import (
 var ErrWorkflowFailed = errors.New("agent workflow failed")
 
 type Request struct {
-	UserID        string               `json:"user_id"`
-	ChatID        string               `json:"chat_id"`
-	Messages      []storage.LLMMessage `json:"messages"`
-	MemoryVersion int64                `json:"memory_version"`
+	RunID            string               `json:"run_id"`
+	MemoryGrantNonce string               `json:"memory_grant_nonce"`
+	UserID           string               `json:"user_id"`
+	ChatID           string               `json:"chat_id"`
+	Messages         []storage.LLMMessage `json:"messages"`
+	MemoryVersion    int64                `json:"memory_version"`
 }
 
 type Result struct {

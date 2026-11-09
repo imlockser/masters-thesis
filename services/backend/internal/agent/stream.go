@@ -9,11 +9,17 @@ import (
 	"strconv"
 	"time"
 
+	"masters-thesis/backend/internal/auth"
 	"masters-thesis/backend/internal/storage"
 )
 
 func (s *Service) Stream(w http.ResponseWriter, r *http.Request) {
-	run, err := s.store.GetRun(r.Context(), r.PathValue("run_id"), r.URL.Query().Get("user_id"))
+	userID := auth.UserID(r.Context())
+	if userID == "" {
+		http.Error(w, "Unauthorized", http.StatusUnauthorized)
+		return
+	}
+	run, err := s.store.GetRun(r.Context(), r.PathValue("run_id"), userID)
 	if err != nil {
 		status := http.StatusInternalServerError
 		if errors.Is(err, storage.ErrRunNotFound) {

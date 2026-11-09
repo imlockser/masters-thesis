@@ -25,7 +25,4 @@
 - Coordinate schedules/cache publication when running multiple MCP processes.
   Singleton state and locks are currently per process; two replicas would each
   run both hourly jobs.
-- Connect ZITADEL registration/login to the frontend and token validation to RPC
-  and SSE. Replace the configured local user ID with verified identity and give
-  the agent worker authenticated service access to `SaveUserMemory`.
 - Define cloud deployment; application services currently run as local processes.

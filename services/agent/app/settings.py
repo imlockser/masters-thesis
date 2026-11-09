@@ -7,7 +7,9 @@ PROJECT_ROOT = Path(__file__).resolve().parents[3]
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_file=PROJECT_ROOT / "env" / "agent.env", env_file_encoding="utf-8"
+        env_file=PROJECT_ROOT / "env" / "agent.env",
+        env_file_encoding="utf-8",
+        hide_input_in_errors=True,
     )
 
     dbos_system_database_url: str
@@ -16,3 +18,4 @@ class Settings(BaseSettings):
     llm_model: str
     mcp_url: str
     backend_rpc_url: str
+    worker_callback_key: str

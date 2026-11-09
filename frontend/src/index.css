@@ -1,7 +1,5 @@
 :root {
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-  color: #262626;
-  background: #f5f5f5;
   font-synthesis: none;
   text-rendering: optimizeLegibility;
 }
@@ -17,60 +15,145 @@ textarea,
 input {
   font: inherit;
 }
+button.ant-btn {
+  transition-property: color, background-color, border-color;
+}
 .app-layout {
   height: 100dvh;
   min-height: 0;
 }
 .sidebar {
-  border-right: 1px solid #f0f0f0;
+  border-right: 1px solid var(--ant-color-border-secondary);
 }
 .sidebar-content {
   display: flex;
   flex-direction: column;
   height: 100%;
+  font-size: 14px;
 }
-.brand {
-  padding: 24px 20px;
+.sidebar-content button.ant-btn {
+  --ant-btn-border-width: 0px;
 }
-.sidebar-actions {
-  padding: 0 16px 20px;
+.sidebar-content .brand,
+.sidebar-content .user-menu-trigger {
+  height: 48px;
+  padding: 8px;
+  gap: 12px;
+  justify-content: flex-start;
+}
+.sidebar-content .brand {
+  margin: 8px;
 }
 .chat-navigation {
   flex: 1;
   min-height: 0;
+  margin-inline: 8px;
   overflow-y: auto;
 }
 .chat-navigation .ant-menu {
+  background: transparent;
   border-inline-end: 0 !important;
 }
-.sidebar-footer {
-  padding: 16px;
-  border-top: 1px solid #f0f0f0;
-  text-align: center;
+.chat-navigation .ant-menu .ant-menu-item {
+  width: 100%;
+  margin: 2px 0;
+  padding-inline: 8px;
 }
-.sidebar-footer > span {
+.chat-navigation .ant-menu-item > .ant-menu-item-icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+}
+.chat-navigation .ant-menu .ant-menu-item .ant-menu-title-content {
+  margin-inline-start: 8px;
+}
+.chat-section-label {
   display: block;
-  margin-top: 8px;
+  margin: 4px 8px 6px;
+  font-weight: 500;
+}
+.chat-navigation .chat-options {
+  flex-shrink: 0;
+  width: 24px;
+  height: 24px;
+  padding: 0;
+}
+.sidebar-footer {
+  display: flex;
+  flex-shrink: 0;
+  border-top: 1px solid var(--ant-color-border-secondary);
+}
+.sidebar-footer .user-menu-trigger {
+  width: calc(100% - 16px);
+  margin: 8px;
+}
+.user-menu-trigger > .ant-avatar,
+.user-menu-trigger > .anticon {
+  flex-shrink: 0;
+}
+.user-menu-trigger > .anticon:last-child {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 24px;
+  height: 24px;
+}
+.user-menu-trigger:focus-visible {
+  outline: 2px solid currentColor;
+  outline-offset: -2px;
+}
+.user-menu-details {
+  flex: 1;
+  min-width: 0;
+  text-align: start;
+  line-height: 1.4;
+}
+.user-menu-details > .ant-typography {
+  display: block;
+  max-width: 100%;
+  line-height: 20px;
+}
+.user-menu-details > .ant-typography-secondary {
   font-size: 12px;
+  line-height: 16px;
 }
 .conversation-layout {
   min-width: 0;
   min-height: 0;
 }
+.conversation-header,
+.composer {
+  display: flex;
+  align-items: center;
+  min-height: 72px;
+  flex-shrink: 0;
+}
+.conversation-header > .ant-flex {
+  width: 100%;
+}
 .conversation-header {
-  padding: 20px 28px;
-  background: white;
-  border-bottom: 1px solid #f0f0f0;
+  padding: 12px 28px;
+  background: var(--ant-color-bg-container);
+  border-bottom: 1px solid var(--ant-color-border-secondary);
 }
 .conversation-heading {
+  display: flex;
+  align-items: center;
+  gap: 8px;
   min-width: 0;
 }
-.conversation-heading h4 {
-  margin: 0 0 2px;
+.conversation-heading h4.ant-typography {
+  margin: 0;
+  font-size: 18px;
+  font-weight: 500;
 }
 .conversation-main {
   display: flex;
   flex: 1;
+  min-width: 0;
   min-height: 0;
 }
 .centered,
@@ -92,6 +175,7 @@ input {
 }
 .message-scroll {
   width: 100%;
+  min-width: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
 }
@@ -106,6 +190,9 @@ input {
 }
 .message {
   margin-bottom: 24px;
+}
+.message-assistant .ant-card-small > .ant-card-body {
+  padding: 20px 24px;
 }
 .message-user {
   max-width: 85%;
@@ -124,6 +211,11 @@ input {
   white-space: pre-wrap;
   overflow-wrap: anywhere;
 }
+.markdown,
+.user-text,
+.composer-box textarea.ant-input {
+  font-size: 16px;
+}
 .tool-details {
   margin-top: 10px;
 }
@@ -131,8 +223,54 @@ input {
   margin-bottom: 0 !important;
 }
 .markdown {
-  line-height: 1.7;
+  line-height: 1.65;
   overflow-wrap: anywhere;
+}
+.markdown p,
+.markdown ul,
+.markdown ol,
+.markdown blockquote,
+.markdown pre,
+.markdown-table {
+  margin: 0 0 12px;
+}
+.markdown :is(h1, h2, h3, h4, h5, h6) {
+  margin: 24px 0 8px;
+  line-height: 1.35;
+  font-weight: 600;
+}
+.markdown h1 {
+  font-size: 1.5em;
+}
+.markdown h2 {
+  font-size: 1.3em;
+}
+.markdown :is(h3, h4, h5, h6) {
+  font-size: 1.1em;
+}
+.markdown :is(ul, ol) {
+  padding-inline-start: 1.5em;
+}
+.markdown li + li {
+  margin-top: 6px;
+}
+.markdown li > :is(p, ul, ol) {
+  margin-block: 6px;
+}
+.markdown blockquote {
+  padding: 4px 0 4px 12px;
+  border-inline-start: 3px solid var(--ant-color-border);
+  color: var(--ant-color-text-secondary);
+}
+.markdown blockquote > :last-child,
+.markdown li > :last-child {
+  margin-bottom: 0;
+}
+.markdown hr {
+  width: 100%;
+  margin: 24px 0;
+  border: 0;
+  border-top: 1px solid var(--ant-color-border-secondary);
 }
 .markdown > :first-child {
   margin-top: 0;
@@ -142,51 +280,80 @@ input {
 }
 .markdown pre {
   padding: 12px;
-  background: #f5f5f5;
+  background: var(--ant-color-fill-tertiary);
   border-radius: 6px;
   overflow-x: auto;
 }
 .markdown code {
   font-size: 0.9em;
 }
-.markdown table {
-  display: block;
+.markdown-table {
   max-width: 100%;
   overflow-x: auto;
+}
+.markdown-table:focus-visible {
+  outline: 2px solid var(--ant-color-primary);
+  outline-offset: 2px;
+}
+.markdown table {
+  width: max-content;
   border-collapse: collapse;
 }
 .markdown th,
 .markdown td {
+  max-width: 20rem;
   padding: 8px 12px;
-  border: 1px solid #e8e8e8;
+  border: 1px solid light-dark(#d9d9d9, #424242);
   text-align: left;
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .markdown th {
-  background: #fafafa;
+  background: var(--ant-color-fill-quaternary);
 }
 .composer {
   width: min(100%, 860px);
   margin: 0 auto;
-  padding: 12px 24px 20px;
+  padding: 8px 24px 16px;
 }
-.composer-footer {
-  margin-top: 10px;
+.composer-box {
+  width: 100%;
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 7px;
+  border: 1px solid var(--ant-color-border);
+  border-radius: 26px;
+  background: var(--ant-color-bg-container);
 }
-.keyboard-hint {
-  font-size: 12px;
+.composer-box:focus-within {
+  border-color: var(--ant-color-primary);
+  box-shadow: 0 0 0 2px var(--ant-color-primary-bg);
+}
+.composer-field {
+  flex: 1;
+  min-width: 0;
+  align-self: center;
+}
+.composer-box .composer-field .ant-input-borderless {
+  outline: none;
+  box-shadow: none;
+}
+.composer-box button.composer-send {
+  flex-shrink: 0;
+  width: 36px;
+  height: 36px;
+  font-size: 16px;
 }
 
 @media (max-width: 767px) {
-  .conversation-header {
+  .message-assistant .ant-card-small > .ant-card-body {
     padding: 16px;
   }
+  .conversation-header {
+    padding: 12px 16px;
+  }
   .conversation-header .ant-badge-status-text {
-    font-size: 12px;
-  }
-  .conversation-heading h4 {
-    font-size: 16px;
-  }
-  .conversation-heading > span {
     font-size: 12px;
   }
   .message-column {
@@ -196,13 +363,7 @@ input {
     max-width: 95%;
   }
   .composer {
-    padding: 12px 16px 16px;
-  }
-  .keyboard-hint {
-    display: none;
-  }
-  .composer-footer {
-    justify-content: flex-end;
+    padding: 4px 16px 16px;
   }
   .error-banner {
     padding: 12px 16px 0;

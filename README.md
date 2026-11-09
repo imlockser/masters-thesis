@@ -7,7 +7,8 @@ The repository includes local Docker Compose infrastructure, data preparation
 modules and notebooks, a DBOS agent worker with tool execution and streamed events,
 an MCP service with live solar inference, hourly model/forecast refresh and cached
 forecast tools, a Go backend with chat storage, queued agent requests and SSE
-responses, and a React chat frontend. Application authentication is not connected.
+responses, and a React chat frontend with ZITADEL login. The backend authenticates
+RPC and SSE requests through ZITADEL token introspection.
 
 ## Documentation
 
@@ -40,7 +41,7 @@ run as local processes.
   backend module. Database integration tests require `TEST_DATABASE_URL`.
 - Use `pnpm` for the frontend; run its lint, tests, and build before completing changes.
 - Keep local env files containing secrets out of Git.
-- Declare every service setting in its env file; keep env files free of comments
-  and do not maintain env templates.
+- Keep all service env files in the root `env/` directory, declare every setting,
+  and keep these files free of comments. Do not maintain env templates.
 - Use English for all project content, including documentation, descriptions,
   and comments.

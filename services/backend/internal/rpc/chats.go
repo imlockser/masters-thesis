@@ -7,26 +7,20 @@ import (
 	"github.com/creachadair/jrpc2"
 	"github.com/creachadair/jrpc2/handler"
 
+	"masters-thesis/backend/internal/auth"
 	"masters-thesis/backend/internal/storage"
 )
 
-type UserParams struct {
-	UserID string `json:"user_id"`
-}
-
 type ChatParams struct {
 	ChatID string `json:"chat_id"`
-	UserID string `json:"user_id"`
 }
 
 type CreateChatParams struct {
-	UserID string `json:"user_id"`
-	Title  string `json:"title"`
+	Title string `json:"title"`
 }
 
 type RenameChatParams struct {
 	ChatID   string `json:"chat_id"`
-	UserID   string `json:"user_id"`
 	NewTitle string `json:"new_title"`
 }
 
@@ -56,22 +50,22 @@ func chatMethod[P, R any](call func(context.Context, P) (R, error)) handler.Func
 func ChatMethods(store *storage.Store) handler.Map {
 	return handler.Map{
 		"CreateChat": chatMethod(func(ctx context.Context, params CreateChatParams) (storage.Chat, error) {
-			return store.CreateChat(ctx, params.UserID, params.Title)
+			return store.CreateChat(ctx, auth.UserID(ctx), params.Title)
 		}),
-		"ListChats": chatMethod(func(ctx context.Context, params UserParams) ([]storage.Chat, error) {
-			return store.ListChats(ctx, params.UserID)
+		"ListChats": chatMethod(func(ctx context.Context, params struct{}) ([]storage.Chat, error) {
+			return store.ListChats(ctx, auth.UserID(ctx))
 		}),
 		"GetChat": chatMethod(func(ctx context.Context, params ChatParams) (storage.ChatDetails, error) {
-			return store.GetChat(ctx, params.ChatID, params.UserID)
+			return store.GetChat(ctx, params.ChatID, auth.UserID(ctx))
 		}),
 		"RenameChat": chatMethod(func(ctx context.Context, params RenameChatParams) (storage.Chat, error) {
-			return store.RenameChat(ctx, params.ChatID, params.UserID, params.NewTitle)
+			return store.RenameChat(ctx, params.ChatID, auth.UserID(ctx), params.NewTitle)
 		}),
 		"DeleteChat": chatMethod(func(ctx context.Context, params ChatParams) (any, error) {
-			return nil, store.DeleteChat(ctx, params.ChatID, params.UserID)
+			return nil, store.DeleteChat(ctx, params.ChatID, auth.UserID(ctx))
 		}),
-		"DeleteAllChats": chatMethod(func(ctx context.Context, params UserParams) (any, error) {
-			return nil, store.DeleteAllChats(ctx, params.UserID)
+		"DeleteAllChats": chatMethod(func(ctx context.Context, params struct{}) (any, error) {
+			return nil, store.DeleteAllChats(ctx, auth.UserID(ctx))
 		}),
 	}
 }

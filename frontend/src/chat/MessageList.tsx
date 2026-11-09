@@ -13,6 +13,34 @@ function toolName(name: string): string {
   return name.replaceAll('_', ' ')
 }
 
+interface MarkdownNode {
+  type: string
+  value?: string
+  children?: MarkdownNode[]
+}
+
+function preserveLineBreaks() {
+  function visit(node: MarkdownNode) {
+    if (!node.children) return
+
+    node.children = node.children.flatMap((child): MarkdownNode[] => {
+      visit(child)
+      if (child.type === 'html' && /^<br\s*\/?>$/i.test(child.value ?? ''))
+        return [{ type: 'break' }]
+
+      if (child.type !== 'text' || !child.value?.includes('\n')) return [child]
+
+      return child.value.split('\n').flatMap((value, index) =>
+        index === 0
+          ? [{ type: 'text', value }]
+          : [{ type: 'break' }, { type: 'text', value }],
+      )
+    })
+  }
+
+  return visit
+}
+
 export function MessageList({
   chat,
   run,
@@ -52,7 +80,7 @@ export function MessageList({
       ref={container}
       className="message-scroll"
       role="log"
-      aria-label="Conversation"
+      aria-label="Chat"
       onScroll={() => {
         const element = container.current
         if (element)
@@ -109,7 +137,17 @@ export function MessageList({
                         }
                       >
                         {message.role === 'assistant' ? (
-                          <Markdown remarkPlugins={[remarkGfm]} skipHtml>
+                          <Markdown
+                            remarkPlugins={[remarkGfm, preserveLineBreaks]}
+                            skipHtml
+                            components={{
+                              table: ({ children }) => (
+                                <div className="markdown-table" tabIndex={0} role="region" aria-label="Table">
+                                  <table>{children}</table>
+                                </div>
+                              ),
+                            }}
+                          >
                             {text}
                           </Markdown>
                         ) : (

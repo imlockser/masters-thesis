@@ -2,6 +2,7 @@ package agent_test
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -24,6 +25,7 @@ import (
 	"github.com/jackc/pgx/v5"
 
 	"masters-thesis/backend/internal/agent"
+	"masters-thesis/backend/internal/auth"
 	"masters-thesis/backend/internal/rpc"
 	"masters-thesis/backend/internal/storage"
 )
@@ -115,10 +117,16 @@ func startWorker(t *testing.T, databaseURL, backendURL string) *exec.Cmd {
 	return command
 }
 
-func callMethod(t *testing.T, serverURL, method string, params map[string]any) (json.RawMessage, int) {
+func callMethod(t *testing.T, serverURL, userID, method string, params map[string]any) (json.RawMessage, int) {
 	t.Helper()
 	encoded, _ := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": "request", "method": method, "params": params})
-	response, err := http.Post(serverURL+"/rpc", "application/json", strings.NewReader(string(encoded)))
+	request, err := http.NewRequest(http.MethodPost, serverURL+"/rpc", strings.NewReader(string(encoded)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Content-Type", "application/json")
+	request.Header.Set("Authorization", "Bearer "+userID)
+	response, err := http.DefaultClient.Do(request)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -138,9 +146,39 @@ func callMethod(t *testing.T, serverURL, method string, params map[string]any) (
 	return payload.Result, 0
 }
 
-func rpcCall(t *testing.T, serverURL string, params map[string]any) (agent.StartedRun, int) {
+func fixtureAuthentication(t *testing.T) *auth.Authenticator {
 	t.Helper()
-	result, code := callMethod(t, serverURL, "SendMessage", params)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		r.ParseForm()
+		json.NewEncoder(w).Encode(map[string]any{
+			"active": true, "iss": "http://" + r.Host, "exp": time.Now().Add(time.Hour).Unix(),
+			"aud": "test-project", "sub": r.Form.Get("token"),
+			"urn:zitadel:iam:org:project:test-project:roles": map[string]map[string]string{
+				"viewer": {"test-org": "org.invalid"},
+			},
+		})
+	}))
+	t.Cleanup(server.Close)
+	authenticator, err := auth.New(auth.Config{Issuer: server.URL, ProjectID: "test-project", ClientID: "test-client", ClientSecret: "test-secret"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return authenticator
+}
+
+func getEvents(t *testing.T, client *http.Client, url, userID string) (*http.Response, error) {
+	t.Helper()
+	request, err := http.NewRequest(http.MethodGet, url, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	request.Header.Set("Authorization", "Bearer "+userID)
+	return client.Do(request)
+}
+
+func rpcCall(t *testing.T, serverURL, userID string, params map[string]any) (agent.StartedRun, int) {
+	t.Helper()
+	result, code := callMethod(t, serverURL, userID, "SendMessage", params)
 	var started agent.StartedRun
 	if code == 0 {
 		if err := json.Unmarshal(result, &started); err != nil {
@@ -192,12 +230,12 @@ func TestPythonAgentQueueAndHTTPStream(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() { queue.Close() })
-	service := agent.NewService(ctx, store, queue)
+	service := agent.NewService(ctx, store, queue, bytes.Repeat([]byte{0x11}, 32))
 	t.Cleanup(service.Close)
 	bridge := rpc.NewHandler(store.SaveUserMemory, rpc.AgentMethods(service), rpc.ChatMethods(store))
-	t.Cleanup(func() { bridge.Close() })
-	mux.Handle("POST /rpc", bridge)
-	mux.HandleFunc("GET /agent/runs/{run_id}/events", service.Stream)
+	mux.Handle("POST /rpc", fixtureAuthentication(t).Middleware(auth.RequireUserRole(bridge)))
+	mux.Handle("POST /internal/agent/memory", http.HandlerFunc(service.SaveRunMemory))
+	mux.Handle("GET /agent/runs/{run_id}/events", fixtureAuthentication(t).Middleware(auth.RequireUserRole(http.HandlerFunc(service.Stream))))
 
 	chat, err := store.CreateChat(ctx, "user-1", "Forecast")
 	if err != nil {
@@ -217,8 +255,8 @@ func TestPythonAgentQueueAndHTTPStream(t *testing.T) {
 		t.Fatal(err)
 	}
 	requestID := uuid.NewString()
-	params := map[string]any{"request_id": requestID, "chat_id": chat.ID, "user_id": chat.UserID, "content": "forecast"}
-	started, code := rpcCall(t, server.URL, params)
+	params := map[string]any{"request_id": requestID, "chat_id": chat.ID, "content": "forecast"}
+	started, code := rpcCall(t, server.URL, chat.UserID, params)
 	if code != 0 || started.RunID != requestID {
 		t.Fatalf("SendMessage failed: %+v, code=%d", started, code)
 	}
@@ -226,16 +264,16 @@ func TestPythonAgentQueueAndHTTPStream(t *testing.T) {
 	if err != nil || len(run.Payload.Messages) != 11 || string(run.Payload.Messages[0].Content) != `"Question 1"` || run.Payload.MemoryVersion != 1 {
 		t.Fatalf("Incorrect five-turn snapshot: %+v, %v", run, err)
 	}
-	duplicate, code := rpcCall(t, server.URL, params)
+	duplicate, code := rpcCall(t, server.URL, chat.UserID, params)
 	if code != 0 || duplicate.RunID != started.RunID {
 		t.Fatalf("Duplicate request was not idempotent: %+v, %d", duplicate, code)
 	}
 	params["content"] = "different"
-	if _, code := rpcCall(t, server.URL, params); code != int(rpc.RequestReuse) {
+	if _, code := rpcCall(t, server.URL, chat.UserID, params); code != int(rpc.RequestReuse) {
 		t.Fatalf("Expected request reuse error, got %d", code)
 	}
 	params["request_id"] = uuid.NewString()
-	if _, code := rpcCall(t, server.URL, params); code != int(rpc.ChatBusy) {
+	if _, code := rpcCall(t, server.URL, chat.UserID, params); code != int(rpc.ChatBusy) {
 		t.Fatalf("Expected busy chat, got %d", code)
 	}
 	if _, err := store.AddMessage(ctx, chat.ID, chat.UserID, "user", storage.MessageContent{Content: json.RawMessage(`"bypass"`)}); !errors.Is(err, storage.ErrChatBusy) {
@@ -243,7 +281,7 @@ func TestPythonAgentQueueAndHTTPStream(t *testing.T) {
 	}
 
 	client := &http.Client{Timeout: 20 * time.Second}
-	response, err := client.Get(server.URL + started.EventsURL)
+	response, err := getEvents(t, client, server.URL+started.EventsURL, chat.UserID)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -290,6 +328,7 @@ func TestPythonAgentQueueAndHTTPStream(t *testing.T) {
 
 	request, _ := http.NewRequest(http.MethodGet, server.URL+started.EventsURL, nil)
 	request.Header.Set("Last-Event-ID", strconv.Itoa(lastID))
+	request.Header.Set("Authorization", "Bearer "+chat.UserID)
 	response, err = client.Do(request)
 	if err != nil {
 		t.Fatal(err)
@@ -313,16 +352,18 @@ func TestPythonAgentQueueAndHTTPStream(t *testing.T) {
 
 	for _, test := range []struct {
 		path   string
+		userID string
 		lastID string
 		status int
 	}{
-		{"/agent/runs/" + started.RunID + "/events?user_id=other", "", http.StatusNotFound},
-		{started.EventsURL, "invalid", http.StatusBadRequest},
-		{started.EventsURL, "-1", http.StatusBadRequest},
-		{"/agent/runs/not-a-uuid/events?user_id=user-1", "", http.StatusBadRequest},
+		{started.EventsURL, "other", "", http.StatusNotFound},
+		{started.EventsURL, chat.UserID, "invalid", http.StatusBadRequest},
+		{started.EventsURL, chat.UserID, "-1", http.StatusBadRequest},
+		{"/agent/runs/not-a-uuid/events", chat.UserID, "", http.StatusBadRequest},
 	} {
 		request, _ := http.NewRequest(http.MethodGet, server.URL+test.path, nil)
 		request.Header.Set("Last-Event-ID", test.lastID)
+		request.Header.Set("Authorization", "Bearer "+test.userID)
 		response, err := client.Do(request)
 		if err != nil {
 			t.Fatal(err)
@@ -334,20 +375,21 @@ func TestPythonAgentQueueAndHTTPStream(t *testing.T) {
 	}
 	for _, test := range []struct {
 		params map[string]any
+		userID string
 		code   int
 	}{
-		{map[string]any{"request_id": uuid.NewString(), "chat_id": chat.ID, "user_id": "other", "content": "forecast"}, int(rpc.ChatNotFound)},
-		{map[string]any{"request_id": "invalid", "chat_id": chat.ID, "user_id": chat.UserID, "content": "forecast"}, -32602},
-		{map[string]any{"request_id": uuid.NewString(), "chat_id": chat.ID, "user_id": chat.UserID, "content": "forecast", "history_turns": 10}, -32602},
+		{map[string]any{"request_id": uuid.NewString(), "chat_id": chat.ID, "content": "forecast"}, "other", int(rpc.ChatNotFound)},
+		{map[string]any{"request_id": "invalid", "chat_id": chat.ID, "content": "forecast"}, chat.UserID, -32602},
+		{map[string]any{"request_id": uuid.NewString(), "chat_id": chat.ID, "content": "forecast", "history_turns": 10}, chat.UserID, -32602},
 	} {
-		if _, code := rpcCall(t, server.URL, test.params); code != test.code {
+		if _, code := rpcCall(t, server.URL, test.userID, test.params); code != test.code {
 			t.Fatalf("Expected RPC code %d, got %d", test.code, code)
 		}
 	}
 
 	for _, content := range []string{"remember", "fail", "forecast"} {
-		params = map[string]any{"request_id": uuid.NewString(), "chat_id": chat.ID, "user_id": chat.UserID, "content": content}
-		started, code := rpcCall(t, server.URL, params)
+		params = map[string]any{"request_id": uuid.NewString(), "chat_id": chat.ID, "content": content}
+		started, code := rpcCall(t, server.URL, chat.UserID, params)
 		if code != 0 {
 			t.Fatalf("Could not start %s: %d", content, code)
 		}
@@ -384,7 +426,11 @@ func TestPythonAgentQueueAndHTTPStream(t *testing.T) {
 		t.Fatal(err)
 	}
 	var requests sync.WaitGroup
-	results := make(chan agent.StartedRun, 10)
+	type userRun struct {
+		agent.StartedRun
+		userID string
+	}
+	results := make(chan userRun, 10)
 	for i := range 10 {
 		chat, err := store.CreateChat(ctx, fmt.Sprintf("parallel-%d", i), "Parallel forecast")
 		if err != nil {
@@ -395,14 +441,14 @@ func TestPythonAgentQueueAndHTTPStream(t *testing.T) {
 			if err != nil {
 				t.Error(err)
 			}
-			results <- started
+			results <- userRun{started, chat.UserID}
 		})
 	}
 	requests.Wait()
 	close(results)
 	var pending []storage.AgentRun
 	for started := range results {
-		response, err := client.Get(server.URL + started.EventsURL)
+		response, err := getEvents(t, client, server.URL+started.EventsURL, started.userID)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -415,8 +461,7 @@ func TestPythonAgentQueueAndHTTPStream(t *testing.T) {
 			}
 		}
 		response.Body.Close()
-		query, _ := url.Parse(started.EventsURL)
-		run, err := store.GetRun(ctx, started.RunID, query.Query().Get("user_id"))
+		run, err := store.GetRun(ctx, started.RunID, started.userID)
 		if err != nil || run.State != "pending" || !live {
 			t.Fatalf("Parallel run did not stream while pending: %+v, %v", run, err)
 		}
@@ -430,7 +475,7 @@ func TestPythonAgentQueueAndHTTPStream(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	response, err = client.Get(server.URL + queued.EventsURL)
+	response, err = getEvents(t, client, server.URL+queued.EventsURL, queuedChat.UserID)
 	if err != nil {
 		t.Fatal(err)
 	}

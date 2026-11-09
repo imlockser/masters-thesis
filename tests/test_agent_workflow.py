@@ -12,6 +12,8 @@ from services.agent.app.providers.llm import llm_provider
 
 def request():
     return {
+        "run_id": "00000000-0000-0000-0000-000000000002",
+        "memory_grant_nonce": "22" * 32,
         "user_id": "user-1",
         "chat_id": "00000000-0000-0000-0000-000000000001",
         "messages": [{"role": "user", "content": "Remember my preferences."}],
@@ -84,6 +86,12 @@ def test_workflow_streams_before_completion_and_tracks_memory_version(
     ]
     assert len(data["messages"]) == 1
     assert [call.args[-1] for call in save.await_args_list] == [4, 5]
+    assert all(
+        call.kwargs
+        == {"run_id": data["run_id"], "grant_nonce": data["memory_grant_nonce"]}
+        for call in save.await_args_list
+    )
+    assert "memory_grant_nonce" not in str(events)
     assert [event["sequence"] for event in events] == list(range(len(events)))
     assert events[-1] == {
         "sequence": len(events) - 1,

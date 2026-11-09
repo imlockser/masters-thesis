@@ -12,6 +12,7 @@ import (
 
 	"github.com/creachadair/jrpc2"
 
+	"masters-thesis/backend/internal/auth"
 	"masters-thesis/backend/internal/storage"
 )
 
@@ -27,6 +28,7 @@ func call(t *testing.T, h http.Handler, method, params string) response {
 	body := `{"jsonrpc":"2.0","id":"request-1","method":"` + method + `","params":` + params + `}`
 	request := httptest.NewRequest(http.MethodPost, "/rpc", strings.NewReader(body))
 	request.Header.Set("Content-Type", "application/json")
+	request = request.WithContext(auth.WithUserID(request.Context(), "user-1"))
 	recorder := httptest.NewRecorder()
 	h.ServeHTTP(recorder, request)
 	if recorder.Code != http.StatusOK {
@@ -55,8 +57,7 @@ func TestSaveUserMemoryProcedure(t *testing.T) {
 
 		return storage.UserMemory{UserID: userID, Summary: summary, Version: 1, UpdatedAt: updatedAt}, nil
 	})
-	defer bridge.Close()
-	result := call(t, bridge, "SaveUserMemory", `{"user_id":"user-1","summary":"Prefers solar.","expected_version":0}`)
+	result := call(t, bridge, "SaveUserMemory", `{"summary":"Prefers solar.","expected_version":0}`)
 	if result.Error != nil || invocations != 1 {
 		t.Fatalf("procedure failed: %+v, calls=%d", result, invocations)
 	}
@@ -76,19 +77,17 @@ func TestInvalidParamsDoNotSave(t *testing.T) {
 		invocations++
 		return storage.UserMemory{}, nil
 	})
-	defer bridge.Close()
 	for _, params := range []string{
 		`{}`,
 		`null`,
 		`[]`,
-		`{"user_id":"user","summary":"Summary"}`,
-		`{"user_id":"user","summary":"Summary","expected_version":null}`,
-		`{"user_id":"user","summary":"Summary","expected_version":-1}`,
-		`{"user_id":"user","summary":"Summary","expected_version":"0"}`,
-		`{"user_id":"user","summary":"Summary","expected_version":0.5}`,
-		`{"user_id":"user","summary":"Summary","expected_version":0,"extra":true}`,
-		`{"user_id":" ","summary":"Summary","expected_version":0}`,
-		`{"user_id":"user","summary":" ","expected_version":0}`,
+		`{"summary":"Summary"}`,
+		`{"summary":"Summary","expected_version":null}`,
+		`{"summary":"Summary","expected_version":-1}`,
+		`{"summary":"Summary","expected_version":"0"}`,
+		`{"summary":"Summary","expected_version":0.5}`,
+		`{"summary":"Summary","expected_version":0,"extra":true}`,
+		`{"summary":" ","expected_version":0}`,
 	} {
 		t.Run(params, func(t *testing.T) {
 			result := call(t, bridge, "SaveUserMemory", params)
@@ -116,8 +115,7 @@ func TestStorageErrorMapping(t *testing.T) {
 			bridge := NewHandler(func(context.Context, string, string, int64) (storage.UserMemory, error) {
 				return storage.UserMemory{}, test.err
 			})
-			defer bridge.Close()
-			result := call(t, bridge, "SaveUserMemory", `{"user_id":"user","summary":"Summary","expected_version":1}`)
+			result := call(t, bridge, "SaveUserMemory", `{"summary":"Summary","expected_version":1}`)
 			if result.Error == nil || result.Error.Code != test.code || len(result.Result) != 0 {
 				t.Fatalf("unexpected error response: %+v", result)
 			}
@@ -133,7 +131,6 @@ func TestInternalStorageMethodsAreNotExposed(t *testing.T) {
 		t.Error("unknown method reached storage")
 		return storage.UserMemory{}, nil
 	}, ChatMethods(&storage.Store{}))
-	defer bridge.Close()
 	for _, method := range []string{"GetUserMemory", "AddMessage", "GetHistory"} {
 		result := call(t, bridge, method, `{}`)
 		if result.Error == nil || result.Error.Code != jrpc2.MethodNotFound {

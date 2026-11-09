@@ -1,21 +1,35 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { listenToRun } from '../api/events'
-import { rpc, RpcError, USER_ID } from '../api/rpc'
+import { useRpc, RpcError } from '../api/rpc'
 import type { Chat, ChatDetails } from '../api/types'
+import { useAccessToken } from '../auth/useAccessToken'
 import { applyEvent, startRun } from './run'
 import type { RunState } from './run'
 
 interface Submission {
   request_id: string
-  chat_id: string
+  chat_id: string | null
   content: string
+  created_chat?: Chat
 }
 
-const selectionKey = `energy-assistant:${USER_ID}:chat`
+const selectionKey = 'energy-assistant:chat'
 const failedRun =
   'The agent could not complete this request. You can send another message.'
 
+export function chatTitle(content: string): string {
+  const title = content.trim().replace(/\s+/g, ' ')
+  const characters = Array.from(title)
+  if (characters.length <= 80) return title
+
+  const preview = characters.slice(0, 79).join('')
+  const boundary = preview.lastIndexOf(' ')
+  return `${boundary > preview.length / 2 ? preview.slice(0, boundary) : preview}…`
+}
+
 export function useChat() {
+  const rpc = useRpc()
+  const getAccessToken = useAccessToken()
   const [chats, setChats] = useState<Chat[]>([])
   const [selectedId, setSelectedId] = useState<string | null>(null)
   const [chat, setChat] = useState<ChatDetails | null>(null)
@@ -30,7 +44,7 @@ export function useChat() {
   const retrySubmission = useRef<Submission | null>(null)
 
   const selectChat = useCallback((id: string | null) => {
-    if (selected.current === id) return
+    if (selected.current === id && id !== null) return
 
     selected.current = id
     loadVersion.current++
@@ -49,7 +63,7 @@ export function useChat() {
     const items = await rpc('ListChats', {}, signal)
     setChats(items)
     return items
-  }, [])
+  }, [rpc])
 
   const loadChat = useCallback(
     async (id: string, signal?: AbortSignal, failure?: string) => {
@@ -96,13 +110,13 @@ export function useChat() {
           setError(
             cause instanceof Error
               ? cause.message
-              : 'The conversation could not be loaded.',
+              : 'The chat could not be loaded.',
           )
       } finally {
         if (current()) setLoadingChat(false)
       }
     },
-    [],
+    [rpc],
   )
 
   useEffect(() => {
@@ -134,12 +148,12 @@ export function useChat() {
   }, [refreshList, selectChat])
 
   useEffect(() => {
-    if (!selectedId) return
+    if (!selectedId || chat?.id === selectedId) return
     const controller = new AbortController()
     // oxlint-disable-next-line react/set-state-in-effect -- State updates follow asynchronous network responses.
     void loadChat(selectedId, controller.signal)
     return () => controller.abort()
-  }, [selectedId, loadChat])
+  }, [selectedId, chat?.id, loadChat])
 
   const runId = run?.id
   const runUrl = run?.url
@@ -149,6 +163,7 @@ export function useChat() {
 
     return listenToRun(
       runUrl,
+      getAccessToken,
       (event) => {
         if (selected.current !== selectedId) return
         setRun((previous) =>
@@ -170,16 +185,41 @@ export function useChat() {
         if (selected.current === selectedId) setError(message)
       },
     )
-  }, [runId, runUrl, selectedId, loadChat])
+  }, [runId, runUrl, selectedId, loadChat, getAccessToken])
 
   async function submit(pending: Submission): Promise<boolean> {
+    const sourceChat = selected.current
+    const sourceVersion = loadVersion.current
+    const current = () => selected.current === sourceChat && loadVersion.current === sourceVersion
     setSending(true)
     setError(null)
     retrySubmission.current = pending
 
     try {
-      const started = await rpc('SendMessage', pending)
-      if (selected.current !== pending.chat_id) return false
+      if (!pending.chat_id) {
+        pending.created_chat = await rpc('CreateChat', { title: chatTitle(pending.content) })
+        pending.chat_id = pending.created_chat.id
+      }
+
+      if (chat?.id === pending.chat_id && chat.title === 'New chat' && chat.messages.length === 0)
+        await renameChat(pending.chat_id, chatTitle(pending.content))
+
+      const started = await rpc('SendMessage', {
+        request_id: pending.request_id,
+        chat_id: pending.chat_id,
+        content: pending.content,
+      })
+      if (pending.created_chat) {
+        const created = pending.created_chat
+        setChats((items) => items.some((item) => item.id === created.id) ? items : [created, ...items])
+      }
+      if (!current()) return false
+
+      if (sourceChat === null && pending.created_chat) {
+        selectChat(pending.chat_id)
+        setChat({ ...pending.created_chat, messages: [] })
+        setLoadingChat(false)
+      }
 
       retrySubmission.current = null
       setChat((current) => {
@@ -205,12 +245,12 @@ export function useChat() {
       setRun(startRun(started.run_id, started.events_url))
       return true
     } catch (cause) {
-      if (selected.current === pending.chat_id) {
+      if (current()) {
         if (cause instanceof RpcError && cause.code !== -32603) {
           retrySubmission.current = null
-          if (cause.code === -32003) {
+          if (cause.code === -32003 && sourceChat) {
             setLoadingChat(true)
-            await loadChat(pending.chat_id)
+            await loadChat(sourceChat)
           }
         }
         setError(
@@ -221,22 +261,24 @@ export function useChat() {
       }
       return false
     } finally {
-      if (selected.current === pending.chat_id) setSending(false)
+      if (current() || selected.current === pending.chat_id) setSending(false)
     }
   }
 
   async function send(content: string): Promise<boolean> {
-    if (!selectedId || !content.trim()) return false
+    if (!content.trim() || busy || loadingList) return false
+    const chatID = selected.current
     const previous = retrySubmission.current
     const pending =
-      previous?.chat_id === selectedId && previous.content === content
+      previous && previous.content === content &&
+      (previous.chat_id === chatID || (chatID === null && previous.created_chat))
         ? previous
-        : { request_id: crypto.randomUUID(), chat_id: selectedId, content }
+        : { request_id: crypto.randomUUID(), chat_id: chatID, content }
     return submit(pending)
   }
 
   async function retry(): Promise<boolean> {
-    if (retrySubmission.current?.chat_id === selectedId)
+    if (retrySubmission.current && (selectedId === null || retrySubmission.current.chat_id === selectedId))
       return submit(retrySubmission.current)
     if (selectedId) {
       setLoadingChat(true)
@@ -253,12 +295,6 @@ export function useChat() {
       }
     }
     return false
-  }
-
-  async function createChat() {
-    const created = await rpc('CreateChat', { title: 'New chat' })
-    setChats((items) => [created, ...items])
-    selectChat(created.id)
   }
 
   async function renameChat(id: string, title: string) {
@@ -300,7 +336,7 @@ export function useChat() {
     connection,
     busy,
     selectChat,
-    createChat,
+    newChat: () => selectChat(null),
     renameChat,
     deleteChat,
     deleteAllChats,

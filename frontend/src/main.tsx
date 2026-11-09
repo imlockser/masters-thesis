@@ -1,10 +1,18 @@
-import { StrictMode } from 'react'
-import { createRoot } from 'react-dom/client'
-import './index.css'
-import App from './App.tsx'
+import { StrictMode } from "react";
+import { createRoot } from "react-dom/client";
+import { AuthProvider } from "react-oidc-context";
 
-createRoot(document.getElementById('root')!).render(
+import App from "./App";
+import { oidcConfig } from "./auth/oidc";
+import { AuthGuard } from "./auth/AuthGuard";
+import "./index.css";
+
+createRoot(document.getElementById("root")!).render(
   <StrictMode>
-    <App />
+    <AuthProvider {...oidcConfig}>
+      <AuthGuard>
+        <App />
+      </AuthGuard>
+    </AuthProvider>
   </StrictMode>,
-)
+);

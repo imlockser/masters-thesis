@@ -77,7 +77,7 @@ async def main() -> None:
             meta=None,
         )
 
-    backend_provider.setup(os.environ["TEST_BACKEND_RPC_URL"])
+    backend_provider.setup(os.environ["TEST_BACKEND_RPC_URL"], "11" * 32)
     DBOS(
         config={
             "name": "energy-agent",

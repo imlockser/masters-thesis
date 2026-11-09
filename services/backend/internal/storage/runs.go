@@ -24,15 +24,18 @@ type RunPayload struct {
 }
 
 type AgentRun struct {
-	ID            string          `gorm:"type:uuid;primaryKey" json:"id"`
-	ChatID        string          `json:"chat_id"`
-	UserMessageID int64           `json:"user_message_id"`
-	State         string          `gorm:"default:pending" json:"state"`
-	Payload       RunPayload      `gorm:"type:jsonb;serializer:json" json:"-"`
-	Artifacts     json.RawMessage `gorm:"type:jsonb;default:'[]'" json:"artifacts"`
-	Error         string          `json:"error,omitempty"`
-	CreatedAt     time.Time       `gorm:"default:CURRENT_TIMESTAMP" json:"created_at"`
-	CompletedAt   *time.Time      `json:"completed_at,omitempty"`
+	MemoryGrantNonce     string          `json:"-"`
+	MemoryGrantHash      []byte          `json:"-"`
+	MemoryGrantExpiresAt *time.Time      `json:"-"`
+	ID                   string          `gorm:"type:uuid;primaryKey" json:"id"`
+	ChatID               string          `json:"chat_id"`
+	UserMessageID        int64           `json:"user_message_id"`
+	State                string          `gorm:"default:pending" json:"state"`
+	Payload              RunPayload      `gorm:"type:jsonb;serializer:json" json:"-"`
+	Artifacts            json.RawMessage `gorm:"type:jsonb;default:'[]'" json:"artifacts"`
+	Error                string          `json:"error,omitempty"`
+	CreatedAt            time.Time       `gorm:"default:CURRENT_TIMESTAMP" json:"created_at"`
+	CompletedAt          *time.Time      `json:"completed_at,omitempty"`
 }
 
 func (s *Store) PrepareRun(ctx context.Context, requestID, chatID, userID, content string) (AgentRun, error) {

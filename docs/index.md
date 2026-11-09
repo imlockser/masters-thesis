@@ -12,6 +12,8 @@ the open-questions document.
 | [MCP service](mcp.md) | Server startup, environment configuration, and tool layout and registration. |
 | [Solar forecasting](solar-forecast.md) | Registry refresh, 48-hour inference, hourly jobs, current-release cache, and rendered tool results. |
 | [Backend](backend.md) | Go storage, migrations, frontend chat RPC procedures, versioned memory, and server startup. |
+| [Authentication](authentication.md) | ZITADEL introspection, verified identity and roles, run-scoped worker credentials, HTTP errors, and local verification. |
+| [Viewer provisioning](viewer-provisioning.md) | Signed Actions V2 registration events, default role assignment, Target/Execution setup, and local connectivity. |
 | [Agent API](agent-api.md) | SendMessage, five-turn context, DBOS dispatch, SSE replay, and result persistence. |
-| [Frontend](frontend.md) | React chat interface, local user configuration, RPC/SSE integration, and development commands. |
+| [Frontend](frontend.md) | React chat interface, ZITADEL login, RPC/SSE token transport, and development commands. |
 | [Open questions](open-questions.md) | Deferred design decisions and when to revisit them. |

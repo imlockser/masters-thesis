@@ -6,7 +6,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net/url"
 	"sync"
 	"time"
 
@@ -14,13 +13,14 @@ import (
 )
 
 type Service struct {
-	store   *storage.Store
-	queue   Queue
-	ctx     context.Context
-	cancel  context.CancelFunc
-	mu      sync.Mutex
-	active  map[string]bool
-	workers sync.WaitGroup
+	workerKey []byte
+	store     *storage.Store
+	queue     Queue
+	ctx       context.Context
+	cancel    context.CancelFunc
+	mu        sync.Mutex
+	active    map[string]bool
+	workers   sync.WaitGroup
 }
 
 type StartedRun struct {
@@ -28,9 +28,9 @@ type StartedRun struct {
 	EventsURL string `json:"events_url"`
 }
 
-func NewService(ctx context.Context, store *storage.Store, queue Queue) *Service {
+func NewService(ctx context.Context, store *storage.Store, queue Queue, workerKey []byte) *Service {
 	ctx, cancel := context.WithCancel(ctx)
-	return &Service{store: store, queue: queue, ctx: ctx, cancel: cancel, active: make(map[string]bool)}
+	return &Service{workerKey: workerKey, store: store, queue: queue, ctx: ctx, cancel: cancel, active: make(map[string]bool)}
 }
 
 func (s *Service) Close() {
@@ -55,7 +55,8 @@ func prepareRequest(run storage.AgentRun) Request {
 		messages = append(messages, storage.LLMMessage{Role: "system", MessageContent: storage.MessageContent{Content: encoded}})
 	}
 	messages = append(messages, run.Payload.Messages...)
-	return Request{UserID: run.Payload.UserID, ChatID: run.ChatID, Messages: messages, MemoryVersion: run.Payload.MemoryVersion}
+	return Request{RunID: run.ID, MemoryGrantNonce: run.MemoryGrantNonce,
+		UserID: run.Payload.UserID, ChatID: run.ChatID, Messages: messages, MemoryVersion: run.Payload.MemoryVersion}
 }
 
 func (s *Service) SendMessage(ctx context.Context, requestID, chatID, userID, content string) (StartedRun, error) {
@@ -64,12 +65,11 @@ func (s *Service) SendMessage(ctx context.Context, requestID, chatID, userID, co
 		return StartedRun{}, err
 	}
 	if run.State == "pending" {
-		if err := s.queue.Enqueue(ctx, run.ID, prepareRequest(run)); err != nil {
+		if err := s.enqueue(ctx, run); err != nil {
 			return StartedRun{}, err
 		}
-		s.watch(run)
 	}
-	return StartedRun{RunID: run.ID, EventsURL: "/agent/runs/" + run.ID + "/events?user_id=" + url.QueryEscape(userID)}, nil
+	return StartedRun{RunID: run.ID, EventsURL: "/agent/runs/" + run.ID + "/events"}, nil
 }
 
 func (s *Service) Resume(ctx context.Context) error {
@@ -78,11 +78,25 @@ func (s *Service) Resume(ctx context.Context) error {
 		return err
 	}
 	for _, run := range runs {
-		if err := s.queue.Enqueue(ctx, run.ID, prepareRequest(run)); err != nil {
+		if err := s.enqueue(ctx, run); err != nil {
 			return err
 		}
-		s.watch(run)
 	}
+	return nil
+}
+
+func (s *Service) enqueue(ctx context.Context, run storage.AgentRun) error {
+	run, err := s.store.PrepareRunMemoryGrant(ctx, run.ID, s.workerKey)
+	if err != nil {
+		return err
+	}
+	if run.State != "pending" {
+		return nil
+	}
+	if err := s.queue.Enqueue(ctx, run.ID, prepareRequest(run)); err != nil {
+		return err
+	}
+	s.watch(run)
 	return nil
 }
 

@@ -98,10 +98,16 @@ state. Setup and shutdown belong to application lifecycle management; do not
 close the shared client while requests are active.
 
 The [backend provider](../services/agent/app/providers/backend.py) calls the Go
-`SaveUserMemory` JSON-RPC procedure. It returns the new memory version, checks the
+internal run-scoped memory endpoint. It returns the new memory version, checks the
 returned user and version, and raises `MemoryConflictError` on a version conflict.
 HTTP, protocol, and storage failures propagate without retries. Its lifecycle
 follows the same `setup()`/`close()` pattern.
+
+The provider derives a run-specific credential from the workflow's public nonce
+and `WORKER_CALLBACK_KEY`, and sends it only in an Authorization header.
+Repeated callbacks reuse the same run and expected version. The backend records
+successful results atomically with the memory update, so retries do not write
+twice. Browser tokens are not placed in DBOS arguments or storage.
 
 Providers do not manage chat history or orchestrate tools.
 

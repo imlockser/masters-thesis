@@ -19,8 +19,17 @@ Create the ignored `env/backend.env`, without comments, with these settings:
 | `DATABASE_URL` | `app` |
 | `DBOS_SYSTEM_DATABASE_URL` | `agent_dbos_sys`, matching the agent worker. |
 | `PORT` | Backend HTTP port; defaults to `8081` when unset or empty. |
+| `ZITADEL_ISSUER` | Exact issuer, `http://localhost:8080` locally. |
+| `ZITADEL_PROJECT_ID` | Required token audience, `398272774335889413`. |
+| `ZITADEL_CLIENT_ID` | Client ID of the AI Platform API application. |
+| `ZITADEL_CLIENT_SECRET` | Its client secret for introspection using HTTP Basic. |
+| `WORKER_CALLBACK_KEY` | Shared 64-hex-character service key, matching `env/agent.env`; never sent to DBOS. |
 
-Credentials must match `env/postgres.env`. Commands read configuration from the
+Fill API credentials in `env/backend.env` from ZITADEL Console as described in
+[Authentication](authentication.md). Optional registration webhook settings are
+listed in [Viewer provisioning](viewer-provisioning.md#local-configuration). The server
+refuses to start with missing auth settings or credential placeholders.
+Database credentials must match `env/postgres.env`. Commands read configuration from the
 process environment; load it from the repository root:
 
 ```sh
@@ -48,6 +57,7 @@ most 20 open connections. Reuse the Store across concurrent requests and call
 | `messages` | Generated numeric ID, chat foreign key, role, JSONB payload, and creation time. Deleting a chat cascades to its messages. |
 | `user_memory` | One summary per `user_id`, an incrementing version, and update time. Independent of chats. |
 | `agent_runs` | Request/workflow UUID, chat and user-message references, context snapshot, pending/completed/failed state, structured artifacts, and completion time. Deleted with its chat. |
+| `run_memory_callbacks` | Run and expected-version receipts for idempotent memory saves; deleted with their run. |
 
 IDs and creation times are generated automatically. `user_id` is an external
 identity, without a foreign key into ZITADEL's database. Indexes cover chat
@@ -82,9 +92,11 @@ Missing and foreign-owned chats both return `ErrChatNotFound`. Invalid IDs,
 empty users/titles/summaries, unsupported roles, and non-positive history limits
 return `ErrInvalidInput`. Ownership checks and message insertion share a
 transaction and a chat row lock, also protecting against concurrent deletion.
-The caller must obtain `userID` from trusted context. The current local RPC
-endpoint accepts the user ID from its trusted internal caller; ZITADEL
-authentication is not connected.
+Storage receives user IDs from trusted callers. HTTP RPC and SSE obtain them
+only from the introspected token's `sub`. RPC rejects `user_id` parameters;
+SSE URLs contain only the run ID.
+The RPC bridge is scoped to one HTTP request so its handlers inherit that
+request's authenticated context and cancellation through `ServerOptions.NewContext`.
 
 ## JSON-RPC
 
@@ -99,7 +111,8 @@ go run ./cmd/server
 The server listens only on `127.0.0.1`, using `PORT` or the default `8081`.
 When changing the port, update `BACKEND_URL` in `env/frontend.env` and
 `BACKEND_RPC_URL` in `env/agent.env` to match. Send HTTP POST requests to `/rpc`
-with `Content-Type: application/json`. Bodies are limited to 1 MiB. Shutdown on
+with `Content-Type: application/json` and `Authorization: Bearer <access_token>`.
+Bodies are limited to 1 MiB. Shutdown on
 Ctrl+C or SIGTERM closes SSE readers and persistence observers, allows active
 HTTP requests to finish, and releases shared clients and database pools. It does
 not cancel queued/running Python workflows. The server does not apply migrations
@@ -113,14 +126,13 @@ Example request:
   "id": "save-memory-1",
   "method": "SaveUserMemory",
   "params": {
-    "user_id": "example-user",
     "summary": "Prefers day-ahead solar forecasts.",
     "expected_version": 0
   }
 }
 ```
 
-All three parameters are required; `expected_version` must be a non-negative
+`summary` and `expected_version` are required. `expected_version` must be a non-negative
 integer, including explicit `0` for the first save. Unknown parameter fields are
 rejected. The result contains the saved `user_id`, `summary`, `version`, and
 `updated_at`, preserving the request ID in the JSON-RPC response.
@@ -132,22 +144,26 @@ rejected. The result contains the saved `user_id`, `summary`, `version`, and
 | `-32603` | Internal failure; database details are not returned. |
 | `-32601` | Unknown method; low-level history/message operations are not exposed. |
 
-This is an internal development endpoint without authentication. It must remain
-loopback-only until caller authentication and user authorization are implemented.
+Every method on `/rpc`, including `SaveUserMemory`, requires a valid user access
+token and at least one verified AI Platform role: `viewer`, `developer`, or
+`admin`. An authenticated caller without an allowed role receives HTTP 403.
+All three roles remain restricted to their own resources. The worker uses the separately authenticated
+[run memory callback](authentication.md#worker-memory-callback), preserving the
+same memory version check. It has no access to arbitrary user RPC procedures.
 
 ## Chat procedures
 
 Frontend chat operations use the same `POST /rpc` JSON-RPC envelope. All parameters
-listed below are required; unknown fields are rejected.
+listed below are required; unknown fields, including `user_id`, are rejected.
 
 | Method | Parameters | Result |
 | --- | --- | --- |
-| `CreateChat` | `user_id`, `title` | Created chat with generated `id` and `created_at`. |
-| `ListChats` | `user_id` | Owned chats, ordered by `created_at DESC, id DESC`; `[]` when empty. |
-| `GetChat` | `chat_id`, `user_id` | Chat fields, `messages`, and optional `active_run_id`. |
-| `RenameChat` | `chat_id`, `user_id`, `new_title` | Updated chat. |
-| `DeleteChat` | `chat_id`, `user_id` | `null` on success. |
-| `DeleteAllChats` | `user_id` | `null` on success, including when no chats exist. |
+| `CreateChat` | `title` | Created chat with generated `id` and `created_at`. |
+| `ListChats` | None (`{}`) | Owned chats, ordered by `created_at DESC, id DESC`; `[]` when empty. |
+| `GetChat` | `chat_id` | Chat fields, `messages`, and optional `active_run_id`. |
+| `RenameChat` | `chat_id`, `new_title` | Updated chat. |
+| `DeleteChat` | `chat_id` | `null` on success. |
+| `DeleteAllChats` | None (`{}`) | `null` on success, including when no chats exist. |
 
 Titles must be non-empty after trimming; chat IDs must be UUIDs and user IDs must
 be non-empty. A missing or foreign-owned chat returns `-32002`; invalid parameters
@@ -224,5 +240,5 @@ PostgreSQL-backed HTTP tests cover chat CRUD, ordered full history, pending run
 IDs, ownership, atomic busy-chat deletion rejection, and cascade deletion.
 Go/Python integration starts the real agent workflow with deterministic LLM/MCP
 fixtures using the root `.venv`. It checks enqueue, live SSE and replay, five-turn
-history, memory RPC, artifacts, disconnect persistence, prepared-run recovery, and
+history, run-scoped memory callbacks, artifacts, disconnect persistence, prepared-run recovery, and
 ten overlapping requests. It requires the Python environment from `uv sync`.
