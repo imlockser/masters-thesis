@@ -18,12 +18,20 @@ async def forecast_solar_generation(
 ) -> ToolResult:
     """Return Germany's total forecast solar energy for the requested interval.
 
+    AVAILABILITY: future forecasts only; no historical observations or archive
+    of past forecasts. Only the current published release is retained, with 48
+    consecutive hourly intervals. The requested end must fit inside that release;
+    choosing a later start does not extend its coverage by another 48 hours.
+    The cache refresh is scheduled hourly at :05 UTC, subject to refresh success.
+
     The primary result is the interval's total energy in MWh, followed by hourly
     power, energy, and SHAP explanation details.
 
     Times must include a timezone and map to whole UTC hours. Start is inclusive,
     end exclusive, with at most 48 hours and complete coverage. Before :05 UTC,
     start may be the current hour; from :05 it must be the next hour or later.
+    For example, at 05:26 UTC the earliest start is 06:00 UTC, not 05:00 UTC.
+    Use get_generation_mix for reported historical generation instead.
     The tool reads only the current release and never triggers inference. Release
     age does not reject a covered interval. Text content is the complete model-facing result;
     structured content is a separate numerical artifact.

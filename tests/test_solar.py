@@ -100,6 +100,156 @@ def weather_for(hours):
     return pd.concat(frames, ignore_index=True)
 
 
+def test_best_solar_window_uses_published_cache_and_follows_new_release(
+    tmp_path, release, monkeypatch
+):
+    from services.mcp.app.mcp import mcp
+
+    module = importlib.import_module(
+        "services.mcp.app.tools.find_best_solar_window.tool"
+    )
+    energies = [1, 10, 20, 30, 5, 2] + [0] * 42
+    hours = [
+        hour.model_copy(
+            update={
+                "raw_capacity_factor": energy / release.metadata.capacity_mw,
+                "raw_generation_mw": energy,
+                "generation_mw": energy,
+                "energy_mwh": energy,
+                "base_mw": energy - 53,
+            }
+        )
+        for hour, energy in zip(release.hours, energies)
+    ]
+    release = ForecastResult(metadata=release.metadata, hours=hours)
+    cache = ForecastCache(tmp_path)
+    cache.publish(release, pd.DataFrame({"temperature": [10.0]}))
+    monkeypatch.setattr(module, "forecast_cache", cache)
+    monkeypatch.setattr(jobs, "refresh_model", lambda: None)
+    clock = MagicMock(wraps=datetime)
+    clock.now.return_value = hours[0].interval_start
+    monkeypatch.setattr(module, "datetime", clock)
+
+    async def run():
+        async with Client(mcp) as client:
+            args = {
+                "start_time": hours[0].interval_start.isoformat(),
+                "end_time": hours[5].interval_end.isoformat(),
+                "duration_hours": 3,
+            }
+            for _ in range(2):
+                result = await client.call_tool("find_best_solar_window", args)
+                assert not result.is_error
+                assert result.structured_content is not None
+                assert result.content[0].type == "text"
+                assert result.structured_content["total_energy_mwh"] == 60
+                assert result.structured_content["average_power_mw"] == 20
+                assert (
+                    datetime.fromisoformat(result.structured_content["start_time"])
+                    == hours[1].interval_start
+                )
+                assert (
+                    result.structured_content["release_id"]
+                    == release.metadata.release_id
+                )
+                assert "60.00 MWh" in result.content[0].text
+                text = result.content[0].text
+                assert (
+                    text.index("Search context:")
+                    < text.index("Selected window:")
+                    < text.index("Interpretation:")
+                )
+                assert "Average forecast solar power: 20.00 MW" in text
+                assert (
+                    "release_id" not in text and release.metadata.release_id not in text
+                )
+                assert "license" not in result.structured_content
+
+            newer = release.model_copy(
+                update={
+                    "metadata": release.metadata.model_copy(
+                        update={"release_id": "20240531T230100000000Z"}
+                    ),
+                }
+            )
+            cache.publish(newer, pd.DataFrame({"temperature": [10.0]}))
+            result = await client.call_tool("find_best_solar_window", args)
+            assert result.structured_content is not None
+            assert result.structured_content["release_id"] == newer.metadata.release_id
+
+    asyncio.run(run())
+
+
+@pytest.mark.parametrize("duration", [1, 48])
+def test_best_solar_window_ties_choose_earliest(duration, release, monkeypatch):
+    module = importlib.import_module(
+        "services.mcp.app.tools.find_best_solar_window.tool"
+    )
+    cache = MagicMock()
+    cache.read.return_value = release
+    monkeypatch.setattr(module, "forecast_cache", cache)
+    clock = MagicMock(wraps=datetime)
+    clock.now.return_value = release.hours[0].interval_start
+    monkeypatch.setattr(module, "datetime", clock)
+    result = asyncio.run(
+        module.find_best_solar_window(
+            release.hours[0].interval_start,
+            release.hours[-1].interval_end,
+            duration,
+        )
+    )
+    assert not result.is_error
+    assert result.structured_content["start_time"] == release.hours[
+        0
+    ].interval_start.isoformat().replace("+00:00", "Z")
+    assert result.structured_content["total_energy_mwh"] == 1053 * duration
+
+
+@pytest.mark.parametrize("duration", [0, 49, True, 1.5, 3])
+def test_best_solar_window_rejects_bad_duration_before_cache(
+    duration, release, monkeypatch
+):
+    module = importlib.import_module(
+        "services.mcp.app.tools.find_best_solar_window.tool"
+    )
+    cache = MagicMock()
+    monkeypatch.setattr(module, "forecast_cache", cache)
+    result = asyncio.run(
+        module.find_best_solar_window(
+            release.hours[0].interval_start,
+            release.hours[1].interval_end,
+            duration,
+        )
+    )
+    assert result.is_error
+    cache.read.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "failure",
+    [ValueError("No solar forecast has been published yet."), OSError("unreadable")],
+)
+def test_best_solar_window_reports_unavailable_cache(failure, release, monkeypatch):
+    module = importlib.import_module(
+        "services.mcp.app.tools.find_best_solar_window.tool"
+    )
+    cache = MagicMock()
+    cache.read.side_effect = failure
+    monkeypatch.setattr(module, "forecast_cache", cache)
+    clock = MagicMock(wraps=datetime)
+    clock.now.return_value = release.hours[0].interval_start
+    monkeypatch.setattr(module, "datetime", clock)
+    result = asyncio.run(
+        module.find_best_solar_window(
+            release.hours[0].interval_start,
+            release.hours[1].interval_end,
+            1,
+        )
+    )
+    assert result.is_error
+    assert "Traceback" not in result.content[0].text
+
+
 def test_render_selects_three_per_sign_and_artifact_keeps_all(release):
     hour = release.hours[0]
     text = hour.render()
@@ -499,7 +649,9 @@ def test_tool_earliest_hour_advances_at_five_minutes(
     clock.now.assert_called_once_with(UTC)
     if accepted:
         cache.read.assert_called_once_with(
-            ForecastWindow(start_time=start_time, end_time=start_time + timedelta(hours=1))
+            ForecastWindow(
+                start_time=start_time, end_time=start_time + timedelta(hours=1)
+            )
         )
     else:
         cache.read.assert_not_called()

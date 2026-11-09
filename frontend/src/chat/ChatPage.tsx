@@ -31,7 +31,6 @@ export function ChatPage({ dark, onToggleTheme }: {
   const screens = Grid.useBreakpoint()
   const [drawer, setDrawer] = useState(false)
   const [mutating, setMutating] = useState(false)
-  const [confirmingDeleteAll, setConfirmingDeleteAll] = useState(false)
   const [deletingAll, setDeletingAll] = useState(false)
   const deletePending = useRef(false)
   const [renaming, setRenaming] = useState<Chat | null>(null)
@@ -59,43 +58,48 @@ export function ChatPage({ dark, onToggleTheme }: {
     setTitle(chat.title)
   }
 
-  function confirmDelete(chat: Chat) {
-    modal.confirm({
-      title: `Delete “${chat.title}”?`,
-      content: 'The chat history will be permanently deleted.',
-      okText: 'Delete',
+  function confirmDelete(chat?: Chat) {
+    const confirmation = modal.confirm({
+      title: chat ? `Delete “${chat.title}”?` : 'Delete all chats?',
+      content: chat
+        ? 'The chat history will be permanently deleted. This cannot be undone.'
+        : 'All your chats and messages will be permanently deleted. This cannot be undone.',
+      okText: chat ? 'Delete' : 'Delete all chats',
       okButtonProps: { danger: true },
+      closable: true,
+      mask: { closable: true },
       onOk: async () => {
+        if (deletePending.current) return
+        deletePending.current = true
+        setDeletingAll(!chat)
+        confirmation.update({
+          closable: false,
+          keyboard: false,
+          mask: { closable: false },
+          cancelButtonProps: { disabled: true },
+        })
         try {
-          await state.deleteChat(chat.id)
+          if (chat) await state.deleteChat(chat.id)
+          else await state.deleteAllChats()
         } catch (cause) {
           void message.error(
             cause instanceof Error
               ? cause.message
-              : 'The chat could not be deleted.',
+              : 'Chats could not be deleted.',
           )
           throw cause
+        } finally {
+          deletePending.current = false
+          setDeletingAll(false)
+          confirmation.update({
+            closable: true,
+            keyboard: true,
+            mask: { closable: true },
+            cancelButtonProps: { disabled: false },
+          })
         }
       },
     })
-  }
-
-  async function deleteAllChats() {
-    if (deletePending.current) return
-    deletePending.current = true
-    setDeletingAll(true)
-
-    try {
-      await state.deleteAllChats()
-      setConfirmingDeleteAll(false)
-    } catch (cause) {
-      void message.error(
-        cause instanceof Error ? cause.message : 'Chats could not be deleted.',
-      )
-    } finally {
-      deletePending.current = false
-      setDeletingAll(false)
-    }
   }
 
   const active =
@@ -121,7 +125,7 @@ export function ChatPage({ dark, onToggleTheme }: {
       onDelete={(chat) => confirmDelete(chat)}
       onDeleteAll={() => {
         setDrawer(false)
-        setConfirmingDeleteAll(true)
+        confirmDelete()
       }}
     />
   )
@@ -185,7 +189,7 @@ export function ChatPage({ dark, onToggleTheme }: {
                 </Typography.Title>
               </div>
             </Space>
-            <Space style={{ flexShrink: 0 }}>
+            <Space size={32} style={{ flexShrink: 0 }}>
               {status && <Badge status="processing" text={status} />}
               <Button
                 type="text"
@@ -262,25 +266,6 @@ export function ChatPage({ dark, onToggleTheme }: {
           }}
         />
       </Layout>
-
-      <Modal
-        title="Delete all chats?"
-        open={confirmingDeleteAll}
-        okText="Delete all chats"
-        okButtonProps={{ danger: true, disabled: deletingAll }}
-        cancelButtonProps={{ disabled: deletingAll }}
-        confirmLoading={deletingAll}
-        closable={!deletingAll}
-        keyboard={!deletingAll}
-        mask={{ closable: !deletingAll }}
-        onCancel={() => {
-          if (!deletingAll) setConfirmingDeleteAll(false)
-        }}
-        onOk={deleteAllChats}
-      >
-        All your chats and messages will be permanently deleted.
-        This cannot be undone.
-      </Modal>
 
       <Modal
         title="Rename chat"

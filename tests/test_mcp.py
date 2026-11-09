@@ -39,7 +39,23 @@ def test_server_registers_solar_forecast():
     async def connect():
         async with Client(mcp) as client:
             tools = await client.list_tools()
-            assert [tool.name for tool in tools] == ["forecast_solar_generation"]
+            assert {tool.name for tool in tools} == {
+                "forecast_solar_generation",
+                "get_electricity_prices",
+                "get_generation_mix",
+                "find_best_solar_window",
+            }
+            descriptions = {tool.name: tool.description or "" for tool in tools}
+            assert "2018-10-01" in descriptions["get_electricity_prices"]
+            assert (
+                "not a rolling 48-hour forecast"
+                in descriptions["get_electricity_prices"]
+            )
+            assert "2015-01-01" in descriptions["get_generation_mix"]
+            assert "Never request future hours" in descriptions["get_generation_mix"]
+            for name in ("forecast_solar_generation", "find_best_solar_window"):
+                assert "AVAILABILITY: future forecasts only" in descriptions[name]
+                assert "05:26 UTC" in descriptions[name]
 
     asyncio.run(connect())
 

@@ -7,6 +7,7 @@ from typing import cast
 
 from fastmcp import FastMCP
 
+from ..providers.energy_charts import energy_charts_provider
 from ..providers.registry import registry_provider
 from ..settings import settings
 from .cache import forecast_cache
@@ -56,6 +57,7 @@ async def lifespan(server: FastMCP):
     registry_provider.setup(settings.mlflow_tracking_uri)
 
     try:
+        energy_charts_provider.setup()
         try:
             await asyncio.to_thread(refresh_model)
         except Exception:
@@ -75,4 +77,5 @@ async def lifespan(server: FastMCP):
                 task.cancel()
             await asyncio.gather(*tasks, return_exceptions=True)
     finally:
+        await energy_charts_provider.close()
         registry_provider.close()
