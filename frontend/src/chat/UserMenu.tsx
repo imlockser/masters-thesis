@@ -1,24 +1,29 @@
 import {
   DeleteOutlined,
   LogoutOutlined,
-  MoreOutlined,
+  MoonOutlined,
+  SunOutlined,
   UserOutlined,
 } from '@ant-design/icons'
-import { App, Avatar, Button, Dropdown, Typography } from 'antd'
-import { useState } from 'react'
+import { App, Avatar, Button, Dropdown, Grid, Typography, type GetRef } from 'antd'
+import { useRef, useState } from 'react'
 import { useAuth } from 'react-oidc-context'
 
 interface Props {
+  dark: boolean
   deleteDisabled: boolean
   deleting: boolean
+  onToggleTheme: () => void
   onDeleteAll: () => void
 }
 
-export function UserMenu({ deleteDisabled, deleting, onDeleteAll }: Props) {
+export function UserMenu({ dark, deleteDisabled, deleting, onToggleTheme, onDeleteAll }: Props) {
   const auth = useAuth()
   const profile = auth.user?.profile
   const { message } = App.useApp()
+  const screens = Grid.useBreakpoint()
   const [menuOpen, setMenuOpen] = useState(false)
+  const trigger = useRef<GetRef<typeof Button>>(null)
 
   const fullName = [profile?.given_name?.trim(), profile?.family_name?.trim()]
     .filter(Boolean).join(' ')
@@ -32,10 +37,35 @@ export function UserMenu({ deleteDisabled, deleting, onDeleteAll }: Props) {
     if (url.protocol === 'https:' || url.protocol === 'http:') picture = url.href
   }
 
+  const profileSummary = (
+    <span className="user-menu-summary">
+      <Avatar
+        className="user-menu-avatar"
+        size={32}
+        src={picture}
+        alt=""
+        icon={!name ? <UserOutlined /> : undefined}
+      >
+        {initials}
+      </Avatar>
+      <span className="user-menu-details">
+        <Typography.Text strong ellipsis title={name}>
+          {name || 'Account'}
+        </Typography.Text>
+        {email && (
+          <Typography.Text type="secondary" ellipsis title={email}>
+            {email}
+          </Typography.Text>
+        )}
+      </span>
+    </span>
+  )
+
   return (
     <Dropdown
+      classNames={{ root: 'user-menu-popup framed-menu-popup' }}
       trigger={['click']}
-      placement="rightBottom"
+      placement={screens.lg ? 'rightBottom' : 'topLeft'}
       autoAdjustOverflow
       autoFocus
       open={menuOpen}
@@ -44,17 +74,38 @@ export function UserMenu({ deleteDisabled, deleting, onDeleteAll }: Props) {
       menu={{
         items: [
           {
-            key: 'delete',
-            label: 'Delete all chats',
-            icon: <DeleteOutlined />,
-            danger: true,
-            disabled: deleteDisabled,
+            type: 'group',
+            key: 'profile',
+            label: <span className="user-menu-profile">{profileSummary}</span>,
+            children: [
+              {
+                key: 'theme',
+                label: dark ? 'Switch to light theme' : 'Switch to dark theme',
+                icon: dark ? <SunOutlined /> : <MoonOutlined />,
+              },
+              { type: 'divider' },
+              {
+                key: 'delete',
+                label: 'Delete all chats',
+                icon: <DeleteOutlined />,
+                danger: true,
+                disabled: deleteDisabled,
+              },
+              { type: 'divider' },
+              { key: 'logout', label: 'Log out', icon: <LogoutOutlined /> },
+            ],
           },
-          { type: 'divider' },
-          { key: 'logout', label: 'Log out', icon: <LogoutOutlined /> },
         ],
+        onKeyDown: (event) => {
+          if (event.key !== 'Escape') return
+          event.stopPropagation()
+          setMenuOpen(false)
+          // Let the menu's pending arrow-key focus update finish first.
+          requestAnimationFrame(() => trigger.current?.focus())
+        },
         onClick: ({ key }) => {
-          if (key === 'delete') onDeleteAll()
+          if (key === 'theme') onToggleTheme()
+          else if (key === 'delete') onDeleteAll()
           else if (key === 'logout') {
             void auth.signoutRedirect().catch(() => {
               void message.error('Sign out failed. Please try again.')
@@ -64,6 +115,7 @@ export function UserMenu({ deleteDisabled, deleting, onDeleteAll }: Props) {
       }}
     >
       <Button
+        ref={trigger}
         type="text"
         block
         className="user-menu-trigger"
@@ -73,25 +125,8 @@ export function UserMenu({ deleteDisabled, deleting, onDeleteAll }: Props) {
         loading={deleting}
         disabled={deleting}
       >
-        <Avatar
-          size={32}
-          src={picture}
-          alt=""
-          icon={!name ? <UserOutlined /> : undefined}
-        >
-          {initials}
-        </Avatar>
-        <span className="user-menu-details">
-          <Typography.Text strong ellipsis>
-            {name || 'Account'}
-          </Typography.Text>
-          {email && (
-            <Typography.Text type="secondary" ellipsis>
-              {email}
-            </Typography.Text>
-          )}
-        </span>
-        <MoreOutlined />
+        {profileSummary}
+        <span className="user-menu-chevrons" aria-hidden="true" />
       </Button>
     </Dropdown>
   )

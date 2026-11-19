@@ -16,7 +16,7 @@ function renderProfile(profile?: Partial<UserProfile>) {
   const markup = renderToStaticMarkup(
     <ConfigProvider>
       <App>
-        <UserMenu deleteDisabled={false} deleting={false} onDeleteAll={onDeleteAll} />
+        <UserMenu dark={false} deleteDisabled={false} deleting={false} onToggleTheme={() => {}} onDeleteAll={onDeleteAll} />
       </App>
     </ConfigProvider>,
   )

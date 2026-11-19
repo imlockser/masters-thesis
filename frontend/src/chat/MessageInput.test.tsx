@@ -16,7 +16,7 @@ vi.mock('react', async (original) => ({
   useEffect: (effect: () => void | (() => void)) => { captured.effects.push(effect) },
   useRef: () => ({ current: { focus: captured.focus, blur: captured.blur } }),
 }))
-vi.mock('@ant-design/icons', () => ({ SendOutlined: () => null }))
+vi.mock('@ant-design/icons', () => ({ ArrowUpOutlined: () => null }))
 vi.mock('antd', () => ({
   Button: () => <button aria-label="Send" />,
   Input: {

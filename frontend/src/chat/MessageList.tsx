@@ -1,5 +1,5 @@
-import { LoadingOutlined, ToolOutlined } from '@ant-design/icons'
-import { Card, Collapse, Empty, Space, Tag, Typography, theme } from 'antd'
+import { LoadingOutlined, SunOutlined, ToolOutlined } from '@ant-design/icons'
+import { Card, Collapse, Space, Tag, Typography } from 'antd'
 import { useEffect, useRef } from 'react'
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
@@ -9,6 +9,9 @@ import type { RunState } from './run'
 
 function toolName(name: string): string {
   if (name === 'forecast_solar_generation') return 'Solar forecast'
+  if (name === 'find_best_solar_window') return 'Best solar window'
+  if (name === 'get_electricity_prices') return 'Day-ahead electricity prices'
+  if (name === 'get_generation_mix') return 'Historical generation mix'
   if (name === 'remember') return 'User memory'
   return name.replaceAll('_', ' ')
 }
@@ -48,7 +51,6 @@ export function MessageList({
   chat: ChatDetails
   run: RunState | null
 }) {
-  const { token } = theme.useToken()
   const container = useRef<HTMLDivElement>(null)
   const follow = useRef(true)
   const rows: { key: string; message: Message }[] = [
@@ -89,17 +91,6 @@ export function MessageList({
       }}
     >
       <div className="message-column">
-        {rows.length === 0 && (
-          <div className="conversation-empty">
-            <Empty
-              image={Empty.PRESENTED_IMAGE_SIMPLE}
-              description="Ask about Germany's solar generation"
-            />
-            <Typography.Paragraph type="secondary">
-              Try asking for a forecast for the next six hours.
-            </Typography.Paragraph>
-          </div>
-        )}
         {rows.map(({ key, message }) => {
           if (message.role === 'tool') return null
           const text = messageText(message)
@@ -111,16 +102,9 @@ export function MessageList({
               {(text || generating) && (
                 <>
                   <Typography.Text type="secondary" className="message-label">
-                    {message.role === 'user' ? 'You' : 'Assistant'}
+                    {message.role === 'user' ? 'You' : 'Agent'}
                   </Typography.Text>
-                  <Card
-                    size="small"
-                    style={
-                      message.role === 'user'
-                        ? { background: token.colorFillQuaternary }
-                        : undefined
-                    }
-                  >
+                  <Card size="small">
                     {generating ? (
                       <Space>
                         <LoadingOutlined spin />
@@ -163,23 +147,26 @@ export function MessageList({
                 const active = run?.activeTools.includes(call.id)
                 const failed =
                   !!result && messageText(result).startsWith('Tool error:')
+                const name = call.function.name
+                const solar = name === 'forecast_solar_generation' || name === 'find_best_solar_window'
 
                 return (
                   <Collapse
                     key={call.id}
                     size="small"
                     className="tool-details"
+                    expandIcon={({ isActive }) => (
+                      <span className={isActive ? 'chevron' : 'chevron chevron-right'} aria-hidden="true" />
+                    )}
                     items={[
                       {
                         key: call.id,
                         label: (
                           <Space>
-                            {active ? (
-                              <LoadingOutlined spin />
-                            ) : (
-                              <ToolOutlined />
-                            )}
-                            {toolName(call.function.name)}
+                            <span className={solar ? 'tool-icon-solar' : undefined} aria-hidden="true">
+                              {active ? <LoadingOutlined spin /> : solar ? <SunOutlined /> : <ToolOutlined />}
+                            </span>
+                            <span className="tool-name">{toolName(name)}</span>
                             <Tag
                               color={
                                 failed

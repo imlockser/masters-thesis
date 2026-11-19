@@ -1,11 +1,12 @@
-import { SendOutlined } from '@ant-design/icons'
+import { ArrowUpOutlined } from '@ant-design/icons'
 import { Button, Input, type GetRef } from 'antd'
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, type RefObject } from 'react'
 
 interface Props {
   value: string
   disabled: boolean
   sending: boolean
+  inputRef?: RefObject<GetRef<typeof Input.TextArea> | null>
   onChange: (value: string) => void
   onSend: () => void
 }
@@ -20,10 +21,12 @@ export function MessageInput({
   value,
   disabled,
   sending,
+  inputRef,
   onChange,
   onSend,
 }: Props) {
-  const input = useRef<GetRef<typeof Input.TextArea>>(null)
+  const localInput = useRef<GetRef<typeof Input.TextArea>>(null)
+  const input = inputRef ?? localInput
   const inactive = disabled || sending
 
   useEffect(() => {
@@ -51,7 +54,7 @@ export function MessageInput({
 
     window.addEventListener('keydown', startTyping)
     return () => window.removeEventListener('keydown', startTyping)
-  }, [inactive, value, onChange, onSend])
+  }, [inactive, input, value, onChange, onSend])
 
   return (
     <form
@@ -77,7 +80,7 @@ export function MessageInput({
             ref={input}
             variant="borderless"
             aria-label="Message"
-            placeholder="Ask about solar generation in Germany…"
+            placeholder="Ask about Germany’s energy…"
             value={value}
             onChange={(event) => onChange(event.target.value)}
             autoSize={{ minRows: 1, maxRows: 6 }}
@@ -102,11 +105,9 @@ export function MessageInput({
           aria-label="Send"
           title="Send"
           className="composer-send"
-          style={{ border: 0, boxShadow: 'none' }}
           type="primary"
-          shape="circle"
           htmlType="submit"
-          icon={<SendOutlined />}
+          icon={<ArrowUpOutlined />}
           loading={sending}
           disabled={inactive || !value.trim()}
         />

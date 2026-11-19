@@ -13,7 +13,6 @@ interface Submission {
   created_chat?: Chat
 }
 
-const selectionKey = 'energy-assistant:chat'
 const failedRun =
   'The agent could not complete this request. You can send another message.'
 
@@ -38,7 +37,6 @@ export function useChat() {
   const [loadingChat, setLoadingChat] = useState(false)
   const [sending, setSending] = useState(false)
   const [error, setError] = useState<string | null>(null)
-  const [connection, setConnection] = useState('connecting')
   const selected = useRef<string | null>(null)
   const loadVersion = useRef(0)
   const retrySubmission = useRef<Submission | null>(null)
@@ -55,14 +53,11 @@ export function useChat() {
     setError(null)
     setSending(false)
     setLoadingChat(!!id)
-    if (id) localStorage.setItem(selectionKey, id)
-    else localStorage.removeItem(selectionKey)
   }, [])
 
   const refreshList = useCallback(async (signal?: AbortSignal) => {
     const items = await rpc('ListChats', {}, signal)
     setChats(items)
-    return items
   }, [rpc])
 
   const loadChat = useCallback(
@@ -103,7 +98,6 @@ export function useChat() {
 
         setChat(details)
         setRun(active)
-        setConnection('connecting')
         setError(failure ?? null)
       } catch (cause) {
         if (current())
@@ -123,15 +117,6 @@ export function useChat() {
     const controller = new AbortController()
     // oxlint-disable-next-line react/set-state-in-effect -- State updates follow asynchronous network responses.
     void refreshList(controller.signal)
-      .then((items) => {
-        if (controller.signal.aborted) return
-        const saved = localStorage.getItem(selectionKey)
-        selectChat(
-          items.some((item) => item.id === saved)
-            ? saved
-            : (items[0]?.id ?? null),
-        )
-      })
       .catch((cause) => {
         if (!controller.signal.aborted)
           setError(
@@ -145,7 +130,7 @@ export function useChat() {
       })
 
     return () => controller.abort()
-  }, [refreshList, selectChat])
+  }, [refreshList])
 
   useEffect(() => {
     if (!selectedId || chat?.id === selectedId) return
@@ -178,9 +163,7 @@ export function useChat() {
           )
         }
       },
-      (status) => {
-        if (selected.current === selectedId) setConnection(status)
-      },
+      undefined,
       (message) => {
         if (selected.current === selectedId) setError(message)
       },
@@ -241,7 +224,6 @@ export function useChat() {
           ],
         }
       })
-      setConnection('connecting')
       setRun(startRun(started.run_id, started.events_url))
       return true
     } catch (cause) {
@@ -285,9 +267,8 @@ export function useChat() {
       await loadChat(selectedId)
     } else {
       try {
-        const items = await refreshList()
-        setError(null)
-        selectChat(items[0]?.id ?? null)
+        await refreshList()
+        if (selected.current === null) setError(null)
       } catch (cause) {
         setError(
           cause instanceof Error ? cause.message : 'Chats could not be loaded.',
@@ -333,7 +314,6 @@ export function useChat() {
     loadingChat,
     sending,
     error,
-    connection,
     busy,
     selectChat,
     newChat: () => selectChat(null),

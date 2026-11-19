@@ -15,7 +15,7 @@ export function listenToRun(
   url: string,
   getAccessToken: () => string | undefined,
   onEvent: (event: AgentEvent) => void,
-  onConnection: (status: 'open' | 'reconnecting') => void,
+  onConnection: ((status: 'open' | 'reconnecting') => void) | undefined,
   onFailure: (message: string) => void,
 ): () => void {
   const controller = new AbortController()
@@ -69,7 +69,7 @@ export function listenToRun(
         fail('The backend did not return an agent event stream.')
         return
       }
-      onConnection('open')
+      onConnection?.('open')
 
       const decoder = new TextDecoder()
       let buffer = ''
@@ -148,7 +148,7 @@ export function listenToRun(
     }
 
     if (!controller.signal.aborted) {
-      onConnection('reconnecting')
+      onConnection?.('reconnecting')
       if (!controller.signal.aborted)
         retryTimer = setTimeout(() => void connect(), 3000)
     }

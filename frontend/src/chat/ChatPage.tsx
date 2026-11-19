@@ -1,26 +1,49 @@
-import { EditOutlined, MenuOutlined, MoonOutlined, SunOutlined } from '@ant-design/icons'
+import {
+  BarChartOutlined,
+  ClockCircleOutlined,
+  MenuOutlined,
+  RiseOutlined,
+  SunOutlined,
+  ThunderboltOutlined,
+} from '@ant-design/icons'
 import {
   Alert,
   App,
-  Badge,
   Button,
   Drawer,
-  Empty,
-  Flex,
+  type GetRef,
   Grid,
   Input,
   Layout,
   Modal,
-  Space,
   Spin,
   Typography,
 } from 'antd'
 import { useRef, useState } from 'react'
 import type { Chat } from '../api/types'
-import { ChatSidebar } from './ChatSidebar'
+import { ChatActions, ChatSidebar } from './ChatSidebar'
 import { MessageInput } from './MessageInput'
 import { MessageList } from './MessageList'
 import { useChat } from './useChat'
+
+const prompts = [
+  {
+    title: 'Solar forecast', detail: 'Next six hours', icon: <SunOutlined />,
+    text: 'Forecast solar generation in Germany for the next six hours.',
+  },
+  {
+    title: 'Best solar window', detail: 'Peak two-hour period', icon: <ClockCircleOutlined />,
+    text: 'Which two consecutive hours in the next 24 hours have the highest forecast solar generation in Germany?',
+  },
+  {
+    title: 'Electricity prices', detail: 'Today’s DE–LU prices', icon: <RiseOutlined />,
+    text: 'Show today’s day-ahead wholesale electricity prices for the DE–LU bidding zone.',
+  },
+  {
+    title: 'Generation mix', detail: 'Latest reported day', icon: <BarChartOutlined />,
+    text: 'Show Germany’s electricity generation by source for the most recent complete day with reported data.',
+  },
+]
 
 export function ChatPage({ dark, onToggleTheme }: {
   dark: boolean
@@ -30,9 +53,11 @@ export function ChatPage({ dark, onToggleTheme }: {
   const { message, modal } = App.useApp()
   const screens = Grid.useBreakpoint()
   const [drawer, setDrawer] = useState(false)
+  const [openChatMenuId, setOpenChatMenuId] = useState<string | null>(null)
   const [mutating, setMutating] = useState(false)
   const [deletingAll, setDeletingAll] = useState(false)
   const deletePending = useRef(false)
+  const messageInput = useRef<GetRef<typeof Input.TextArea>>(null)
   const [renaming, setRenaming] = useState<Chat | null>(null)
   const [title, setTitle] = useState('')
   const [input, setInput] = useState({ chatId: state.selectedId, value: '' })
@@ -104,11 +129,18 @@ export function ChatPage({ dark, onToggleTheme }: {
 
   const active =
     state.run?.phase === 'waiting' || state.run?.phase === 'running'
+  const activeChatId = active ? state.selectedId : null
+  const loading = state.loadingChat || state.loadingList
+  const conversation = state.chat && (state.chat.messages.length > 0 || state.run) ? state.chat : null
+  const showWelcome = !loading && !conversation
+  const inputDisabled = state.busy || state.loadingList || (!!state.selectedId && !state.chat)
   const sidebar = (
     <ChatSidebar
+      dark={dark}
+      onToggleTheme={onToggleTheme}
       chats={state.chats}
       selectedId={state.selectedId}
-      activeChatId={active ? state.selectedId : null}
+      activeChatId={activeChatId}
       loading={state.loadingList}
       mutating={mutating}
       deletingAll={deletingAll}
@@ -129,20 +161,10 @@ export function ChatPage({ dark, onToggleTheme }: {
       }}
     />
   )
-  const status = !active
-    ? null
-    : state.connection === 'reconnecting'
-      ? 'Reconnecting…'
-      : state.run?.activeTools.length
-        ? 'Using tools…'
-        : state.run?.phase === 'waiting'
-          ? 'Waiting for agent…'
-          : 'Generating…'
-
   return (
     <Layout className="app-layout">
       {screens.lg ? (
-        <Layout.Sider width={264} theme="light" className="sidebar">
+        <Layout.Sider width={272} theme="light" className="sidebar">
           {sidebar}
         </Layout.Sider>
       ) : (
@@ -160,47 +182,46 @@ export function ChatPage({ dark, onToggleTheme }: {
       )}
 
       <Layout className="conversation-layout">
-        <header className="conversation-header">
-          <Flex align="center" justify="space-between" gap="middle">
-            <Space size="middle" style={{ minWidth: 0, flex: 1 }}>
-              {!screens.lg && (
-                <Button
-                  icon={<MenuOutlined />}
-                  aria-label="Open chats"
-                  onClick={() => setDrawer(true)}
-                />
-              )}
-              <div className="conversation-heading">
-                {state.chat && (
-                  <Button
-                    type="text"
-                    icon={<EditOutlined style={{ fontSize: 18 }} />}
-                    aria-label="Rename chat"
-                    title="Rename chat"
-                    disabled={mutating}
-                    style={{ flexShrink: 0 }}
-                    onClick={() => {
-                      if (state.chat) openRename(state.chat)
-                    }}
-                  />
-                )}
-                <Typography.Title level={4} ellipsis>
-                  {state.chat?.title ?? 'Energy Assistant'}
-                </Typography.Title>
-              </div>
-            </Space>
-            <Space size={32} style={{ flexShrink: 0 }}>
-              {status && <Badge status="processing" text={status} />}
+        {(!screens.lg || conversation) && (
+          <header className="conversation-header">
+            {!screens.lg && (
               <Button
                 type="text"
-                icon={dark ? <SunOutlined style={{ fontSize: 18 }} /> : <MoonOutlined style={{ fontSize: 18 }} />}
-                aria-label={dark ? 'Switch to light theme' : 'Switch to dark theme'}
-                title={dark ? 'Switch to light theme' : 'Switch to dark theme'}
-                onClick={onToggleTheme}
+                icon={<MenuOutlined />}
+                aria-label="Open chats"
+                onClick={() => setDrawer(true)}
               />
-            </Space>
-          </Flex>
-        </header>
+            )}
+            {conversation && (
+              <h1 className="conversation-heading">
+                <ChatActions
+                  chat={conversation}
+                  deleteDisabled={activeChatId === conversation.id}
+                  onRename={openRename}
+                  onDelete={confirmDelete}
+                  placement="bottomLeft"
+                  classNames={{ root: 'framed-menu-popup' }}
+                  minWidth={0}
+                  autoFocus
+                  disabled={mutating}
+                  open={openChatMenuId === conversation.id}
+                  onOpenChange={(open) => setOpenChatMenuId(open ? conversation.id : null)}
+                >
+                  <Button
+                    className="conversation-menu-trigger"
+                    type="text"
+                    aria-haspopup="menu"
+                    aria-expanded={openChatMenuId === conversation.id}
+                    title={conversation.title}
+                  >
+                    <span className="conversation-title">{conversation.title}</span>
+                    <span className="chevron" aria-hidden="true" />
+                  </Button>
+                </ChatActions>
+              </h1>
+            )}
+          </header>
+        )}
 
         {state.error && (
           <div className="error-banner">
@@ -226,45 +247,64 @@ export function ChatPage({ dark, onToggleTheme }: {
           </div>
         )}
 
-        <main className="conversation-main">
-          {state.loadingChat || state.loadingList ? (
+        <main className={`conversation-main${showWelcome ? ' conversation-start' : ''}`}>
+          {loading ? (
             <div className="centered">
               <Spin delay={300} description="Loading chat…" style={{ color: 'var(--ant-color-text-secondary)' }} />
             </div>
-          ) : state.chat ? (
-            <MessageList chat={state.chat} run={state.run} />
+          ) : conversation ? (
+            <MessageList chat={conversation} run={state.run} />
           ) : (
             <div className="welcome">
-              <Empty
-                image={Empty.PRESENTED_IMAGE_SIMPLE}
-                description={
-                  <Space orientation="vertical">
-                    <Typography.Title level={3}>
-                      Explore Germany’s solar generation
-                    </Typography.Title>
-                    <Typography.Text type="secondary">
-                      Start a chat to get forecasts and explanations.
-                    </Typography.Text>
-                  </Space>
-                }
-              />
+              <span className="welcome-mark" aria-hidden="true"><ThunderboltOutlined /></span>
+              <Typography.Title level={1} className="welcome-title">
+                Explore Germany’s energy data
+              </Typography.Title>
+              <Typography.Paragraph type="secondary">
+                Solar forecasts, generation mix, and day-ahead prices.
+              </Typography.Paragraph>
             </div>
           )}
-        </main>
 
-        <MessageInput
-          key={state.selectedId ?? 'draft'}
-          value={draft}
-          onChange={setDraft}
-          disabled={state.busy || state.loadingList || (!!state.selectedId && !state.chat)}
-          sending={state.sending}
-          onSend={() => {
-            if (draft.trim() && !state.busy)
-              void state.send(draft).then((sent) => {
-                if (sent) setDraft('')
-              })
-          }}
-        />
+          {showWelcome && (
+            <section className="welcome-prompts" aria-labelledby="quick-start-heading">
+              <h2 id="quick-start-heading">Quick start</h2>
+              <div className="prompt-grid">
+                {prompts.map((prompt) => (
+                  <Button
+                    key={prompt.title}
+                    className="prompt-button"
+                    disabled={inputDisabled}
+                    onClick={() => {
+                      setDraft(prompt.text)
+                      messageInput.current?.focus({ cursor: 'end' })
+                    }}
+                  >
+                    <span className="prompt-icon" aria-hidden="true">{prompt.icon}</span>
+                    <span className="prompt-copy">
+                      <strong>{prompt.title}</strong>
+                      <span>{prompt.detail}</span>
+                    </span>
+                  </Button>
+                ))}
+              </div>
+            </section>
+          )}
+          <MessageInput
+            key={state.selectedId ?? 'draft'}
+            inputRef={messageInput}
+            value={draft}
+            onChange={setDraft}
+            disabled={inputDisabled}
+            sending={state.sending}
+            onSend={() => {
+              if (draft.trim() && !state.busy)
+                void state.send(draft).then((sent) => {
+                  if (sent) setDraft('')
+                })
+            }}
+          />
+        </main>
       </Layout>
 
       <Modal

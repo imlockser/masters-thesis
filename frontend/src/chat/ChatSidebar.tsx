@@ -3,13 +3,14 @@ import {
   DeleteOutlined,
   EditOutlined,
   MoreOutlined,
+  PlusOutlined,
   ThunderboltOutlined,
 } from '@ant-design/icons'
 import {
   Avatar,
   Button,
   Dropdown,
-  Empty,
+  type DropdownProps,
   Flex,
   Menu,
   Spin,
@@ -19,6 +20,7 @@ import type { Chat } from '../api/types'
 import { UserMenu } from './UserMenu'
 
 interface Props {
+  dark: boolean
   chats: Chat[]
   selectedId: string | null
   activeChatId: string | null
@@ -27,29 +29,63 @@ interface Props {
   deletingAll: boolean
   onSelect: (id: string) => void
   onCreate: () => void
+  onToggleTheme: () => void
   onRename: (chat: Chat) => void
   onDelete: (chat: Chat) => void
   onDeleteAll: () => void
 }
 
+type ChatActionsProps = Pick<DropdownProps, 'autoFocus' | 'children' | 'classNames' | 'disabled' | 'onOpenChange' | 'open' | 'placement'> & {
+  chat: Chat
+  deleteDisabled: boolean
+  minWidth?: number
+  onRename: Props['onRename']
+  onDelete: Props['onDelete']
+}
+
+export function ChatActions({ chat, deleteDisabled, minWidth = 168, onRename, onDelete, ...dropdown }: ChatActionsProps) {
+  return (
+    <Dropdown
+      {...dropdown}
+      trigger={['click']}
+      styles={{ root: { minWidth } }}
+      menu={{
+        items: [
+          { key: 'rename', label: 'Rename', icon: <EditOutlined /> },
+          { key: 'delete', label: 'Delete', icon: <DeleteOutlined />, danger: true, disabled: deleteDisabled },
+        ],
+        onClick: ({ key, domEvent }) => {
+          domEvent.stopPropagation()
+          if (key === 'rename') onRename(chat)
+          else if (key === 'delete') onDelete(chat)
+        },
+      }}
+    />
+  )
+}
+
 export function ChatSidebar(props: Props) {
   return (
     <div className="sidebar-content">
-      <Button
-        className="brand"
-        type="text"
-        aria-label="New chat"
-        title="New chat"
-        onClick={props.onCreate}
-        disabled={props.mutating || props.loading}
-      >
+      <div className="brand">
         <Avatar
           shape="square"
           icon={<ThunderboltOutlined />}
-          style={{ background: '#1677ff' }}
         />
-        <Typography.Text strong>Energy Assistant</Typography.Text>
-      </Button>
+        <Typography.Text strong>Energy Agent</Typography.Text>
+      </div>
+      <div className="sidebar-actions">
+        <Button
+          className="new-chat"
+          type="primary"
+          block
+          icon={<PlusOutlined />}
+          onClick={props.onCreate}
+          disabled={props.mutating || props.loading}
+        >
+          New chat
+        </Button>
+      </div>
 
       <nav className="chat-navigation" aria-label="Chats">
         <Typography.Text type="secondary" className="chat-section-label">
@@ -60,10 +96,9 @@ export function ChatSidebar(props: Props) {
             <Spin />
           </div>
         ) : props.chats.length === 0 ? (
-          <Empty
-            image={Empty.PRESENTED_IMAGE_SIMPLE}
-            description="No chats yet"
-          />
+          <Typography.Text type="secondary" className="chat-navigation-empty">
+            No chats yet
+          </Typography.Text>
         ) : (
           <Menu
             mode="inline"
@@ -78,29 +113,11 @@ export function ChatSidebar(props: Props) {
                   <Typography.Text ellipsis style={{ flex: 1 }}>
                     {chat.title}
                   </Typography.Text>
-                  <Dropdown
-                    trigger={['click']}
-                    menu={{
-                      items: [
-                        {
-                          key: 'rename',
-                          label: 'Rename',
-                          icon: <EditOutlined />,
-                        },
-                        {
-                          key: 'delete',
-                          label: 'Delete',
-                          danger: true,
-                          icon: <DeleteOutlined />,
-                          disabled: props.activeChatId === chat.id,
-                        },
-                      ],
-                      onClick: ({ key, domEvent }) => {
-                        domEvent.stopPropagation()
-                        if (key === 'rename') props.onRename(chat)
-                        else props.onDelete(chat)
-                      },
-                    }}
+                  <ChatActions
+                    chat={chat}
+                    deleteDisabled={props.activeChatId === chat.id}
+                    onRename={props.onRename}
+                    onDelete={props.onDelete}
                   >
                     <Button
                       className="chat-options"
@@ -108,10 +125,11 @@ export function ChatSidebar(props: Props) {
                       size="small"
                       icon={<MoreOutlined />}
                       aria-label={`Options for ${chat.title}`}
+                      aria-haspopup="menu"
                       disabled={props.mutating}
                       onClick={(event) => event.stopPropagation()}
                     />
-                  </Dropdown>
+                  </ChatActions>
                 </Flex>
               ),
             }))}
@@ -121,6 +139,8 @@ export function ChatSidebar(props: Props) {
 
       <div className="sidebar-footer">
         <UserMenu
+          dark={props.dark}
+          onToggleTheme={props.onToggleTheme}
           deleting={props.deletingAll}
           deleteDisabled={
             props.loading || props.chats.length === 0 ||

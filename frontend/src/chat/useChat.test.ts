@@ -1,6 +1,6 @@
 import { createElement } from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { afterEach, beforeEach, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { chatTitle, useChat } from './useChat'
 
 const { rpc } = vi.hoisted(() => ({ rpc: vi.fn() }))
@@ -18,13 +18,9 @@ vi.mock('react', async (original) => {
   }
 })
 
-beforeEach(() => {
-  vi.stubGlobal('localStorage', { setItem: vi.fn(), removeItem: vi.fn() })
-})
 afterEach(() => {
   vi.clearAllMocks()
   rpc.mockReset()
-  vi.unstubAllGlobals()
 })
 
 function chatState() {

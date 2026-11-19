@@ -17,7 +17,7 @@ English, with UTC time context for forecasts.
 | `chat/run.ts` | Ordered, duplicate-resistant event application to one run's temporary messages. |
 | `chat/ChatPage.tsx` | Page layout, dialogs, composer, and loading/error states. |
 | `chat/ChatSidebar.tsx`, `MessageList.tsx`, `MessageInput.tsx` | Chat controls, conversation/tool rendering, and keyboard input. |
-| `chat/UserMenu.tsx` | OIDC profile display, confirmed bulk chat deletion, and OIDC logout in the sidebar footer. |
+| `chat/UserMenu.tsx` | OIDC profile display, theme switching, bulk chat deletion, and OIDC logout in the sidebar footer. |
 
 ## Configuration and startup
 
@@ -66,7 +66,8 @@ given/family name, falling back to name or preferred username, optional email, a
 initials. Missing claims use a neutral account label and icon. It makes no
 additional profile requests and never decodes access tokens for display.
 
-The full footer button opens a dropdown to its right with Delete all chats and Log out.
+The full footer button opens a dropdown that repeats the profile summary above
+the theme switch, Delete all chats, and Log out. Dividers separate the actions.
 ChatPage owns the bulk confirmation so it persists when switching between the
 desktop sidebar and mobile drawer. Bulk deletion shows a loading state; repeat submissions
 and modal cancellation are blocked while the request is pending. The existing
@@ -87,47 +88,49 @@ them in request bodies or URLs.
 The backend validates tokens through ZITADEL introspection. It derives identity
 only from verified `sub`. RPC sends business parameters only, and SSE URLs contain
 the run ID without a user query parameter. RPC rejects caller-supplied `user_id`.
-The localStorage chat-selection key is a browser preference, not an identity;
-restoring it requires the selected chat to appear in the authenticated chat list.
 
 `api/events.ts` uses fetch streaming and AbortController. Native EventSource does
 not support custom Authorization headers and is not used by the frontend.
 
 ## Conversation flow
 
-`ListChats` populates the sidebar. Selection is remembered as a browser preference
-in localStorage. Clicking the sidebar logo/title opens an unsaved draft, with a
-New chat tooltip and keyboard button behavior; the composer is available even
-when no chats exist. Only sending non-empty content calls CreateChat, followed by
+`ListChats` populates the sidebar. The home page opens on every page load.
+The sidebar's New chat button opens an unsaved draft. The empty
+conversation places the welcome heading above a row of four example prompts,
+with a narrower composer below on wide screens. The cards use two columns on
+narrow screens. Choosing one fills and focuses the composer for editing. A
+compact title appears when the conversation starts.
+Only sending non-empty content calls CreateChat, followed by
 SendMessage. The confirmed conversation appears in the sidebar. A failed send
-retains its known created chat ID and request ID for retry. Renaming is available
-from the button left of the header title and the chat's sidebar menu; both open
-the same Rename chat dialog. Deletion requires confirmation. The backend rejects
-deletion of pending chats, including bulk deletion.
+retains its known created chat ID and request ID for retry. Clicking the header
+title opens the same Rename and Delete actions as the sidebar options menu.
+Deletion requires confirmation. The backend rejects deletion of pending chats,
+including bulk deletion.
 
 New chat titles use the first submitted message. Whitespace is collapsed;
 titles longer than 80 Unicode characters are shortened with an ellipsis,
 preferring a word boundary. Manually assigned titles and later messages do not
 trigger automatic renaming.
 
-The top-right header button switches Ant Design's light/dark algorithm. The
-browser remembers the selection under `energy-assistant:theme`, defaulting to
-light. Custom backgrounds use theme tokens.
-General borders and separators share the composer's muted border color in each
-theme. Table gridlines retain their standard contrast, and the active composer
-retains its blue focus.
+The account menu switches between themes based on Catppuccin Latte and Macchiato.
+The browser remembers the selection under `energy-assistant:theme`, defaulting
+to light. `App.tsx` applies the theme to Ant Design and matches the document
+background to the conversation canvas. `index.css` styles the sidebar,
+conversation, and composer.
 
 `GetChat` loads the complete stored history. Its neutral loading indicator appears
 only after 300 ms, keeping fast chat switches free of spinner flashes.
 User/assistant text forms the main
-conversation; assistant function calls have collapsible text results and running,
-done, or error status. Markdown and tables use react-markdown and remark-gfm;
+conversation. Assistant function calls have collapsible text results and running,
+done, or error status. The results use the same reading size and line height as
+the conversation text. Markdown and tables use react-markdown and remark-gfm;
 text newlines and `<br>` line breaks are rendered explicitly; other raw HTML is
 not rendered. Code spans and fenced code preserve their original content.
 Structured artifacts are not displayed as JSON.
 Wide Markdown tables scroll horizontally inside a keyboard-focusable container
-without widening the conversation. Cells are limited to 20rem and wrap long
-text. Cell line breaks preserve inline formatting. Tables that fit require no scrolling.
+without widening the conversation. Cells use tabular numerals and preserve Markdown
+column alignment. They are limited to 20rem and wrap long text. Cell line breaks
+preserve inline formatting. Tables that fit require no scrolling.
 
 Sending creates a UUID `request_id` and calls `SendMessage`. After acknowledgment,
 the user message is shown locally and fetch opens the returned `events_url`.
